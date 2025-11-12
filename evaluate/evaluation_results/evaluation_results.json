@@ -1,0 +1,89 @@
+{
+  "object_retrieval": {
+    "single_view": {
+      "1": {
+        "obj_recall": 0.00023705509837786582,
+        "class_recall": 0.0,
+        "total_queries": 29529
+      },
+      "5": {
+        "obj_recall": 0.0005079752108097125,
+        "class_recall": 0.0,
+        "total_queries": 29529
+      },
+      "10": {
+        "obj_recall": 0.0011514104778353484,
+        "class_recall": 0.0,
+        "total_queries": 29529
+      }
+    },
+    "multiple_views": {
+      "1": {
+        "obj_recall": 0,
+        "class_recall": 0,
+        "total_queries": 0
+      },
+      "5": {
+        "obj_recall": 0,
+        "class_recall": 0,
+        "total_queries": 0
+      },
+      "10": {
+        "obj_recall": 0,
+        "class_recall": 0,
+        "total_queries": 0
+      }
+    },
+    "overall": {
+      "1": {
+        "obj_recall": 0.00023705509837786582,
+        "class_recall": 0.0,
+        "total_queries": 29529
+      },
+      "5": {
+        "obj_recall": 0.0005079752108097125,
+        "class_recall": 0.0,
+        "total_queries": 29529
+      },
+      "10": {
+        "obj_recall": 0.0011514104778353484,
+        "class_recall": 0.0,
+        "total_queries": 29529
+      }
+    }
+  },
+  "view_retrieval": {
+    "1": {
+      "view_recall": 0.0,
+      "total_queries": 29529
+    },
+    "5": {
+      "view_recall": 0.0,
+      "total_queries": 29529
+    },
+    "10": {
+      "view_recall": 0.0,
+      "total_queries": 29529
+    }
+  },
+  "args": {
+    "data_dir": "/data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0",
+    "split": "train",
+    "num_views": 3,
+    "num_images_per_view": 5,
+    "model_path": "../checkpoints/best_model.pth",
+    "model_name": "resnet50",
+    "feature_dim": 1024,
+    "batch_size": 32,
+    "device": "cuda",
+    "topk_list": [
+      1,
+      5,
+      10
+    ],
+    "use_multiple_views": false,
+    "output_dir": "./evaluation_results",
+    "log_file": "./evaluation_results/evaluation_20251030_205411.log",
+    "debug": false
+  }
+}

@@ -1,0 +1,15 @@
+2025-10-27 11:49:58,109 - INFO - 开始评估多视图检索系统
+2025-10-27 11:49:58,109 - INFO - 命令行参数: {'data_dir': '/data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0', 'split': 'train', 'num_views': 6, 'num_images_per_view': 5, 'model_path': '../checkpoints/best_model.pth', 'model_name': 'resnet50', 'feature_dim': 1024, 'batch_size': 32, 'device': 'cuda', 'topk_list': [1, 5, 10], 'use_multiple_views': False, 'output_dir': './evaluation_results', 'log_file': './evaluation_results/evaluation_20251027_114956.log', 'debug': False}
+2025-10-27 11:49:58,120 - INFO - 加载模型: ../checkpoints/best_model.pth
+2025-10-27 11:50:00,527 - INFO - 加载数据集: /data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0 (split: train)
+2025-10-27 11:50:00,822 - ERROR - 评估过程中出现错误: division by zero
+Traceback (most recent call last):
+  File "evaluate.py", line 253, in main
+    dataset = MultiViewDataset(
+  File "/data1/Wuzhihe/Multi_Neighbour_Learning_v1.0/tools/Multi_Neighbour_View_Dataloader.py", line 38, in __init__
+    self._init_objects_and_count_missing()
+  File "/data1/Wuzhihe/Multi_Neighbour_Learning_v1.0/tools/Multi_Neighbour_View_Dataloader.py", line 139, in _init_objects_and_count_missing
+    self._print_missing_stats()
+  File "/data1/Wuzhihe/Multi_Neighbour_Learning_v1.0/tools/Multi_Neighbour_View_Dataloader.py", line 146, in _print_missing_stats
+    print("缺失比例: {:.2%}\n".format(self.missing_stats['missing_images'] / self.missing_stats['total_images']))
+ZeroDivisionError: division by zero

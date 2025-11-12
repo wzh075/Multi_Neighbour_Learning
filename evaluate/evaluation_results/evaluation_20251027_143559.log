@@ -1,0 +1,17 @@
+2025-10-27 14:36:01,013 - INFO - 开始评估多视图检索系统
+2025-10-27 14:36:01,013 - INFO - 命令行参数: {'data_dir': '/data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0', 'split': 'train', 'num_views': 3, 'num_images_per_view': 5, 'model_path': '../checkpoints/best_model.pth', 'model_name': 'resnet50', 'feature_dim': 1024, 'batch_size': 32, 'device': 'cuda', 'topk_list': [1, 5, 10], 'use_multiple_views': False, 'output_dir': './evaluation_results', 'log_file': './evaluation_results/evaluation_20251027_143559.log', 'debug': False}
+2025-10-27 14:36:01,026 - INFO - 加载模型: ../checkpoints/best_model.pth
+2025-10-27 14:36:03,885 - INFO - 加载数据集: /data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0 (split: train)
+2025-10-27 14:36:06,461 - INFO - TensorBoard日志将保存至: /data1/Wuzhihe/Multi_Neighbour_Learning_v1.0/tensorboard_log/retrieval
+2025-10-27 14:36:06,461 - INFO - 开始构建特征数据库，数据集大小: 9843
+2025-10-27 14:36:11,159 - ERROR - 评估过程中出现错误: forward() missing 2 required positional arguments: 'view2' and 'view3'
+Traceback (most recent call last):
+  File "evaluate.py", line 270, in main
+    results = evaluate_retrieval_system(model, dataset, args, logger)
+  File "evaluate.py", line 125, in evaluate_retrieval_system
+    retrieval_system.build_database(dataset, batch_size=args.batch_size, device=args.device)
+  File "/data1/Wuzhihe/Multi_Neighbour_Learning_v1.0/evaluate/retrieval_sys.py", line 87, in build_database
+    view_feats = self.model(view_images)
+  File "/home/hdu/.conda/envs/Viewclouds/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1194, in _call_impl
+    return forward_call(*input, **kwargs)
+TypeError: forward() missing 2 required positional arguments: 'view2' and 'view3'

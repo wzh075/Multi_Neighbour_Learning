@@ -1,0 +1,20 @@
+2025-10-23 22:50:19,706 - INFO - 开始快速验证流程
+2025-10-23 22:50:19,706 - INFO - 数据集路径: /data1/Wuzhihe/Multi_Neighbour_Learning_v1.0/quick_test/data/small_dataset
+2025-10-23 22:50:19,706 - INFO - 输出目录: /data1/Wuzhihe/Multi_Neighbour_Learning_v1.0/quick_test
+2025-10-23 22:50:19,706 - INFO - 加载数据集...
+2025-10-23 22:50:19,755 - INFO - 训练数据集加载完成，包含 400 个样本
+2025-10-23 22:50:19,755 - INFO - 初始化模型...
+2025-10-23 22:50:19,968 - INFO - 模型初始化完成
+2025-10-23 22:50:19,968 - INFO - 初始化损失函数...
+2025-10-23 22:50:19,968 - INFO - 损失函数初始化完成
+2025-10-23 22:50:19,968 - INFO - 开始训练模型...
+2025-10-23 22:50:25,386 - ERROR - 验证过程中发生错误: forward() got an unexpected keyword argument 'obj_feat'
+2025-10-23 22:50:25,388 - ERROR - Traceback (most recent call last):
+  File "/data1/Wuzhihe/Multi_Neighbour_Learning_v1.0/quick_test/quick_validation.py", line 182, in main
+    trained_model = train_model(
+  File "/data1/Wuzhihe/Multi_Neighbour_Learning_v1.0/training/train.py", line 107, in train_model
+    loss_dict = criterion(
+  File "/home/hdu/.conda/envs/Viewclouds/lib/python3.8/site-packages/torch/nn/modules/module.py", line 1194, in _call_impl
+    return forward_call(*input, **kwargs)
+TypeError: forward() got an unexpected keyword argument 'obj_feat'
+

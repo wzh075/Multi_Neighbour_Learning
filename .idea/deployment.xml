@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="PublishConfigData" serverName="Multi_Neighbour_Learning" remoteFilesAllowedToDisappearOnAutoupload="false">
+    <serverData>
+      <paths name="Multi_Neighbour_Learning">
+        <serverdata>
+          <mappings>
+            <mapping deploy="/data1/Wuzhihe/Multi_Neighbour_Learning_v1.0" local="$PROJECT_DIR$" web="/" />
+          </mappings>
+        </serverdata>
+      </paths>
+    </serverData>
+  </component>
+</project>
