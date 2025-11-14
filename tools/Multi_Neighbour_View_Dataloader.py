@@ -14,8 +14,10 @@ class MultiViewDataset(Dataset):
     def __init__(self, root_dir, transform=None, num_views=3, num_images_per_view=5, split="train"):
         self.root_dir = root_dir
         self.transform = transform
-        self.num_views = num_views
+        self.num_views = num_views   
+        # 每个object下的viewpoints数量
         self.num_images_per_view = num_images_per_view
+        # 每个viewpoint对应的邻域图数量
         self.split = split
         
         # 自动扫描类别列表
