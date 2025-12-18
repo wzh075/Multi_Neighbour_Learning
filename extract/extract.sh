@@ -1,4 +1,4 @@
-#!/bin/bash
+  #!/bin/bash
 
 # 多视图检索系统 - 特征提取脚本
 
@@ -19,7 +19,7 @@ ROOT_DIR="/data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0"
 SPLIT="train"
 FEATURE_DB="../features/feature_db.h5"
 MODEL_PATH="../checkpoints/best_model.pth"
-BATCH_SIZE=128
+BATCH_SIZE=16
 NUM_WORKERS=4
 VERBOSE=false
 IMAGE_SIZE=224

@@ -292,8 +292,8 @@ class MultiViewRetrievalModel(nn.Module):
         # 4. 视点-全局融合生成对象级特征
         obj_feat = self.view_global_fusion(global_feat, view_feats)  # (batch, feat_dim)
         
-        # 调整归一化策略：先保留原始特征分布，只对InfoNCE损失计算使用的特征进行归一化
-        # 但为了保持模型一致性，我们仍然对输出特征进行归一化，但保留中间特征的原始分布
+        # 调整归一化策略：只对需要用于InfoNCE损失的特征进行归一化
+        # 保持对象特征为原始分布，在损失函数中根据需要进行归一化
         normalized_obj_feat = F.normalize(obj_feat, p=2, dim=-1)
         normalized_mid_feat = F.normalize(mid_feat, p=2, dim=-1)
         normalized_global_feat = F.normalize(global_feat, p=2, dim=-1)
@@ -304,7 +304,7 @@ class MultiViewRetrievalModel(nn.Module):
             'view_feats': view_feats,                  # (batch, 3, feat_dim) 原始视图特征
             'mid_feat': normalized_mid_feat,           # (batch, feat_dim) 归一化的中间特征
             'global_feat': normalized_global_feat,     # (batch, feat_dim) 归一化的全局特征
-            'obj_feat': normalized_obj_feat,           # (batch, feat_dim) 归一化的对象特征
+            'obj_feat': obj_feat,                      # (batch, feat_dim) 原始对象特征（不再归一化）
             'raw_mid_feat': mid_feat,                  # (batch, feat_dim) 原始中间特征
             'raw_global_feat': global_feat,            # (batch, feat_dim) 原始全局特征
             'raw_obj_feat': obj_feat                   # (batch, feat_dim) 原始对象特征

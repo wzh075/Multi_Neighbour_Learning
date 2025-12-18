@@ -3,7 +3,7 @@
   <component name="WebServers">
     <option name="servers">
       <webServer id="2a95102f-4feb-417f-9485-506c8413997a" name="Multi_Neighbour_Learning">
-        <fileTransfer accessType="SFTP" host="1.15.53.110" port="6064" sshConfigId="21cd57da-f4e7-4209-aa16-cd917dcb07e5" sshConfig="hdu@1.15.53.110:6064 password">
+        <fileTransfer accessType="SFTP" host="10.4.121.64" port="22" sshConfigId="9f58012e-7944-444d-a76f-ae27f0e7fe3a" sshConfig="hdu@10.4.121.64:22 password">
           <advancedOptions>
             <advancedOptions dataProtectionLevel="Private" passiveMode="true" shareSSLContext="true" />
           </advancedOptions>

@@ -101,7 +101,6 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
         epoch_infonce_loss = 0.0
         epoch_view_sim_loss = 0.0
         epoch_global_consistency_loss = 0.0
-        epoch_obj_cluster_loss = 0.0
         
         start_time = time.time()
         zero_infonce_batches = 0  # 记录InfoNCE损失为0的批次数量
@@ -146,7 +145,6 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
                         loss = (loss_dict['infonce_loss'] * 1.2 + 
                                 loss_dict['view_similarity_loss'] + 
                                 loss_dict['global_consistency_loss'] + 
-                                loss_dict['obj_cluster_loss'] * 1.5 + 
                                 loss_dict.get('feat_mean_reg', 0.0)) / accumulation_steps
                         
                         # 添加调试信息，定期检查各损失项的值
@@ -156,7 +154,6 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
                             print(f"  InfoNCE损失: {loss_dict['infonce_loss'].item():.6f}")
                             print(f"  视图相似度损失: {loss_dict['view_similarity_loss'].item():.6f}")
                             print(f"  全局一致性损失: {loss_dict['global_consistency_loss'].item():.6f}")
-                            print(f"  对象聚类损失: {loss_dict['obj_cluster_loss'].item():.6f}")
                             print(f"  特征正则化损失: {loss_dict.get('feat_mean_reg', 0.0).item():.6f}")
                             print(f"  总损失: {loss.item():.6f}")
                             
@@ -186,7 +183,6 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
                     loss = (loss_dict['infonce_loss'] * 1.2 + 
                             loss_dict['view_similarity_loss'] + 
                             loss_dict['global_consistency_loss'] + 
-                            loss_dict['obj_cluster_loss'] * 1.5 + 
                             loss_dict.get('feat_mean_reg', 0.0)) / accumulation_steps
                     
                     # 添加调试信息，定期检查各损失项的值
@@ -196,7 +192,6 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
                         print(f"  InfoNCE损失: {loss_dict['infonce_loss'].item():.6f}")
                         print(f"  视图相似度损失: {loss_dict['view_similarity_loss'].item():.6f}")
                         print(f"  全局一致性损失: {loss_dict['global_consistency_loss'].item():.6f}")
-                        print(f"  对象聚类损失: {loss_dict['obj_cluster_loss'].item():.6f}")
                         print(f"  特征正则化损失: {loss_dict.get('feat_mean_reg', 0.0).item():.6f}")
                         print(f"  总损失: {loss.item():.6f}")
                         
@@ -220,11 +215,7 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
                 if loss_dict['infonce_loss'].item() < 1e-6:
                     zero_infonce_batches += 1
                     
-                # 检查Obj_Cluster_Loss是否为无穷大或NaN，记录但不输出到控制台
-                if torch.isinf(loss_dict['obj_cluster_loss']).any() or torch.isnan(loss_dict['obj_cluster_loss']).any():
-                    writer.add_scalar('Metrics/obj_cluster_loss_invalid', 1, global_step)
-                    # 替换为小值以避免训练崩溃
-                    loss_dict['obj_cluster_loss'] = torch.tensor(0.01, device=device, requires_grad=True)
+                # 已移除对象聚类损失，无需检查
                 
                 # 反向传播
                 if scaler is not None:
@@ -255,9 +246,6 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
                 if not torch.isinf(loss_dict['global_consistency_loss']).any() and not torch.isnan(loss_dict['global_consistency_loss']).any():
                     epoch_global_consistency_loss += loss_dict['global_consistency_loss'].item()
                 
-                if not torch.isinf(loss_dict['obj_cluster_loss']).any() and not torch.isnan(loss_dict['obj_cluster_loss']).any():
-                    epoch_obj_cluster_loss += loss_dict['obj_cluster_loss'].item()
-                
                 # 获取当前学习率
                 current_lr = optimizer.param_groups[0]['lr']
                 
@@ -267,7 +255,6 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
                     'InfoNCE': '{:.4f}'.format(loss_dict['infonce_loss'].item()),
                     'ViewSim': '{:.4f}'.format(loss_dict['view_similarity_loss'].item()),
                     'Global': '{:.4f}'.format(loss_dict['global_consistency_loss'].item()),
-                    'ObjClus': '{:.4f}'.format(loss_dict['obj_cluster_loss'].item()),
                     'LR': '{:.6f}'.format(current_lr)
                 })
                 
@@ -284,7 +271,6 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
         avg_epoch_infonce_loss = epoch_infonce_loss / len(dataloader)
         avg_epoch_view_sim_loss = epoch_view_sim_loss / len(dataloader)
         avg_epoch_global_consistency_loss = epoch_global_consistency_loss / len(dataloader)
-        avg_epoch_obj_cluster_loss = epoch_obj_cluster_loss / len(dataloader)
         
         # 每个epoch结束时的数据总结
         epoch_time = time.time() - start_time
@@ -294,7 +280,6 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
         writer.add_scalar('Losses/infonce_loss', avg_epoch_infonce_loss, epoch)
         writer.add_scalar('Losses/view_similarity_loss', avg_epoch_view_sim_loss, epoch)
         writer.add_scalar('Losses/global_consistency_loss', avg_epoch_global_consistency_loss, epoch)
-        writer.add_scalar('Losses/obj_cluster_loss', avg_epoch_obj_cluster_loss, epoch)
         writer.add_scalar('Metrics/learning_rate', current_lr, epoch)
         writer.add_scalar('Metrics/epoch_time', epoch_time, epoch)
         
@@ -305,7 +290,6 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
         print(f"  InfoNCE损失: {avg_epoch_infonce_loss:.4f}")
         print(f"  视图相似度损失: {avg_epoch_view_sim_loss:.4f}")
         print(f"  全局一致性损失: {avg_epoch_global_consistency_loss:.4f}")
-        print(f"  对象聚类损失: {avg_epoch_obj_cluster_loss:.4f}")
         
         # 添加调试信息，检查损失值是否异常小
         if avg_epoch_loss < 0.01:

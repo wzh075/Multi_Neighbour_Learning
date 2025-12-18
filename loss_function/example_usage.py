@@ -4,11 +4,10 @@
 """
 损失函数模块化使用示例脚本
 
-本脚本演示如何单独使用拆分后的四个损失函数模块：
+本脚本演示如何单独使用拆分后的三个损失函数模块：
 1. InfoNCELoss - 对比学习损失
 2. ViewSimilarityLoss - 视图相似度损失
 3. GlobalConsistencyLoss - 全局一致性损失
-4. ObjectClusterLoss - 对象聚类损失
 
 通过本示例，您可以了解每个损失函数的独立使用方法，以及如何根据需求组合它们。
 """
@@ -20,7 +19,6 @@ import torch.nn as nn
 from InfoNCE_Loss import InfoNCELoss
 from view_similarity_Loss import ViewSimilarityLoss
 from global_consistency_Loss import GlobalConsistencyLoss
-from obj_cluster_Loss import ObjectClusterLoss
 
 
 # 生成示例数据
@@ -95,20 +93,10 @@ def demonstrate_individual_losses(sample_data, device=None):
     loss_global_cons = global_cons_loss(sample_data["view_feats"], sample_data["global_feat"])
     print(f"   损失值: {loss_global_cons.item():.4f}")
     
-    # 4. 使用ObjectClusterLoss
-    print("\n4. ObjectClusterLoss:")
-    obj_cluster_loss = ObjectClusterLoss(tau=0.5, cluster_memory_size=1024, device=device)
-    if device is not None:
-        obj_cluster_loss = obj_cluster_loss.to(device)
-    # 注意：第一次调用时记忆库为空，损失值可能不准确
-    loss_obj_cluster = obj_cluster_loss(sample_data["obj_feat"], sample_data["class_labels"])
-    print(f"   损失值: {loss_obj_cluster.item():.4f}")
-    
     return {
         "infonce_loss": loss_infonce,
         "view_sim_loss": loss_view_sim,
-        "global_cons_loss": loss_global_cons,
-        "obj_cluster_loss": loss_obj_cluster
+        "global_cons_loss": loss_global_cons
     }
 
 
@@ -134,19 +122,16 @@ def demonstrate_combined_losses(sample_data, device=None):
     infonce_loss = InfoNCELoss(tau=0.5)
     view_sim_loss = ViewSimilarityLoss()
     global_cons_loss = GlobalConsistencyLoss()
-    obj_cluster_loss = ObjectClusterLoss(tau=0.5, cluster_memory_size=1024, device=device)
     
     # 将损失函数移动到指定设备
     if device is not None:
         infonce_loss = infonce_loss.to(device)
         view_sim_loss = view_sim_loss.to(device)
         global_cons_loss = global_cons_loss.to(device)
-        obj_cluster_loss = obj_cluster_loss.to(device)
     
     # 设置各损失函数的权重
     lambda_view_sim = 0.0001
     lambda_global_consistency = 1.0
-    lambda_obj_cluster = 1.0
     
     # 计算各个损失
     loss_infonce = infonce_loss(sample_data["view_feats"], sample_data["obj_ids"])
@@ -154,25 +139,20 @@ def demonstrate_combined_losses(sample_data, device=None):
     loss_global_cons = lambda_global_consistency * global_cons_loss(
         sample_data["view_feats"], sample_data["global_feat"]
     )
-    loss_obj_cluster = lambda_obj_cluster * obj_cluster_loss(
-        sample_data["obj_feat"], sample_data["class_labels"]
-    )
     
     # 计算总损失
-    total_loss = loss_infonce + loss_view_sim + loss_global_cons + loss_obj_cluster
+    total_loss = loss_infonce + loss_view_sim + loss_global_cons
     
     # 打印结果
     print(f"InfoNCE损失: {loss_infonce.item():.4f}")
     print(f"视图相似度损失(权重 {lambda_view_sim}): {loss_view_sim.item():.4f}")
     print(f"全局一致性损失(权重 {lambda_global_consistency}): {loss_global_cons.item():.4f}")
-    print(f"对象聚类损失(权重 {lambda_obj_cluster}): {loss_obj_cluster.item():.4f}")
     print(f"总损失: {total_loss.item():.4f}")
     
     return {
         "loss_infonce": loss_infonce,
         "loss_view_sim": loss_view_sim,
         "loss_global_cons": loss_global_cons,
-        "loss_obj_cluster": loss_obj_cluster,
         "total_loss": total_loss
     }
 
@@ -191,19 +171,16 @@ def demonstrate_training_loop(sample_data, device=None):
     infonce_loss = InfoNCELoss(tau=0.5)
     view_sim_loss = ViewSimilarityLoss()
     global_cons_loss = GlobalConsistencyLoss()
-    obj_cluster_loss = ObjectClusterLoss(tau=0.5, cluster_memory_size=1024, device=device)
     
     # 将损失函数移动到指定设备
     if device is not None:
         infonce_loss = infonce_loss.to(device)
         view_sim_loss = view_sim_loss.to(device)
         global_cons_loss = global_cons_loss.to(device)
-        obj_cluster_loss = obj_cluster_loss.to(device)
     
     # 设置各损失函数的权重
     lambda_view_sim = 0.0001
     lambda_global_consistency = 1.0
-    lambda_obj_cluster = 1.0
     
     # 模拟训练循环（3个epoch）
     for epoch in range(1, 4):
@@ -213,8 +190,7 @@ def demonstrate_training_loop(sample_data, device=None):
         # 注意：实际使用时，这些特征应该来自您的模型前向传播
         model_output = {
             "view_feats": sample_data["view_feats"].clone().requires_grad_(True),
-            "global_feat": sample_data["global_feat"].clone().requires_grad_(True),
-            "obj_feat": sample_data["obj_feat"].clone().requires_grad_(True)
+            "global_feat": sample_data["global_feat"].clone().requires_grad_(True)
         }
         
         # 计算各个损失
@@ -223,18 +199,14 @@ def demonstrate_training_loop(sample_data, device=None):
         loss_global_cons = lambda_global_consistency * global_cons_loss(
             model_output["view_feats"], model_output["global_feat"]
         )
-        loss_obj_cluster = lambda_obj_cluster * obj_cluster_loss(
-            model_output["obj_feat"], sample_data["class_labels"]
-        )
         
         # 计算总损失
-        total_loss = loss_infonce + loss_view_sim + loss_global_cons + loss_obj_cluster
+        total_loss = loss_infonce + loss_view_sim + loss_global_cons
         
         # 打印损失信息
         print(f"  InfoNCE: {loss_infonce.item():.4f}, "
               f"ViewSim: {loss_view_sim.item():.4f}, "
               f"GlobalCons: {loss_global_cons.item():.4f}, "
-              f"ObjCluster: {loss_obj_cluster.item():.4f}, "
               f"Total: {total_loss.item():.4f}")
         
         # 模拟反向传播和参数更新

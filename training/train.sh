@@ -5,7 +5,7 @@
 echo "===== 多视图检索系统训练启动 ====="
 
 # 设置环境变量
-export CUDA_VISIBLE_DEVICES=0,1,2,3  # 使用指定的GPU设备
+export CUDA_VISIBLE_DEVICES=0,1  # 使用指定的GPU设备
 
 # 进入脚本所在目录
 cd "$(dirname "$0")"
@@ -15,15 +15,15 @@ cd "$(dirname "$0")"
 
 # 设置训练参数
 ROOT_DIR="/data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0"  # 数据集路径
-BATCH_SIZE=128
+BATCH_SIZE=16
 EPOCHS=100
-LEARNING_RATE=0.001
+LEARNING_RATE=0.0001
 SAVE_DIR="../checkpoints"
 FEAT_DIM=512
 IMAGE_SIZE=224
 NUM_VIEWS=3
 NUM_IMAGES_PER_VIEW=5
-PRETRAINED_WEIGHTS="/data1/Wuzhihe/Multi_Neighbour_Learning_v1.0/pre_checkpoints/best_model.pth"  # 预训练权重路径
+PRETRAINED_WEIGHTS="/data1/Wuzhihe/Multi_Neighbour_Learning_v1.0/pre_checkpoints/best_feature_extractor.pth"  # 预训练特征提取器权重路径
 FREEZE_ENCODER=false  # 是否冻结编码器
 
 # 创建保存目录
@@ -55,7 +55,6 @@ python main.py \
     --pretrained_weights "$PRETRAINED_WEIGHTS" \
     $([ "$FREEZE_ENCODER" = true ] && echo "--freeze_encoder" || echo "") \
     --lambda_global_consistency 0.1 \
-    --lambda_obj_cluster 0.1 \
     --feat_reg_weight 0.5 \
     --feat_activation_scaling 2.0
 

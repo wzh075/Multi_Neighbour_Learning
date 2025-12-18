@@ -1,205 +1,185 @@
 #!/bin/bash
+# -*- coding: utf-8 -*-
 
-# 多视图检索系统评估脚本
+# 多视图检索系统 - 验证脚本
+# Bash Shell 版本
 
-# 颜色定义
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# 设置默认参数
+ROOT_DIR="/data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0"
+SPLIT="train"
+NUM_VIEWS=3
+NUM_IMAGES_PER_VIEW=5
+IMAGE_SIZE=224
+MODEL_PATH="../checkpoints/best_model.pth"
+FEAT_DIM=512
+NUM_CLASSES=40
+FEATURE_DB_PATH="../features/feature_db.h5"
+OUTPUT_DIR="./results"
 
-# 默认参数
-DEFAULT_DATA_DIR="/data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0"
-DEFAULT_SPLIT="train"
-DEFAULT_MODEL_PATH="../checkpoints/best_model.pth"
-DEFAULT_MODEL_NAME="resnet50"
-DEFAULT_FEATURE_DIM=1024
-DEFAULT_BATCH_SIZE=32
-DEFAULT_DEVICE="cuda"
-DEFAULT_TOPK_LIST="1 5 10"
-DEFAULT_OUTPUT_DIR="./evaluation_results"
+# 打印脚本信息
+echo -e "\033[36m"
+echo "========================================================="
+echo "                  多视图检索系统 - 验证脚本                "
+echo "========================================================="
+echo -e "\033[0m"
 
-# 帮助信息
-show_help() {
-    echo -e "${BLUE}用法: $0 [选项]${NC}"
-    echo -e "\n选项:"
-    echo -e "  ${YELLOW}--data-dir${NC}          数据集目录 (默认: ${DEFAULT_DATA_DIR})"
-    echo -e "  ${YELLOW}--split${NC}             数据集划分 (默认: ${DEFAULT_SPLIT})"
-    echo -e "  ${YELLOW}--model-path${NC}        预训练模型路径 (默认: ${DEFAULT_MODEL_PATH})"
-    echo -e "  ${YELLOW}--model-name${NC}        模型名称 (默认: ${DEFAULT_MODEL_NAME})"
-    echo -e "  ${YELLOW}--feature-dim${NC}       特征维度 (默认: ${DEFAULT_FEATURE_DIM})"
-    echo -e "  ${YELLOW}--batch-size${NC}        批量大小 (默认: ${DEFAULT_BATCH_SIZE})"
-    echo -e "  ${YELLOW}--device${NC}            运行设备 (默认: ${DEFAULT_DEVICE})"
-    echo -e "  ${YELLOW}--topk-list${NC}         评估的top-k值列表 (默认: ${DEFAULT_TOPK_LIST})"
-    echo -e "  ${YELLOW}--use-multiple-views${NC} 使用多视图检索 (默认: 禁用)"
-    echo -e "  ${YELLOW}--output-dir${NC}        评估结果输出目录 (默认: ${DEFAULT_OUTPUT_DIR})"
-    echo -e "  ${YELLOW}--debug${NC}             启用调试信息 (默认: 禁用)"
-    echo -e "  ${YELLOW}-h, --help${NC}          显示帮助信息"
-    echo -e "\n示例:"
-    echo -e "  $0 --data-dir ../data --model-path ../models/best_model.pth --device cuda"
-    echo -e "  $0 --data-dir ../data --split test --use-multiple-views --debug"
-}
+# 解析命令行参数
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --root_dir)
+            ROOT_DIR="$2"
+            shift 2
+            ;;
+        --split)
+            SPLIT="$2"
+            shift 2
+            ;;
+        --num_views)
+            NUM_VIEWS="$2"
+            shift 2
+            ;;
+        --num_images_per_view)
+            NUM_IMAGES_PER_VIEW="$2"
+            shift 2
+            ;;
+        --image_size)
+            IMAGE_SIZE="$2"
+            shift 2
+            ;;
+        --model_path)
+            MODEL_PATH="$2"
+            shift 2
+            ;;
+        --feat_dim)
+            FEAT_DIM="$2"
+            shift 2
+            ;;
+        --num_classes)
+            NUM_CLASSES="$2"
+            shift 2
+            ;;
+        --feature_db_path)
+            FEATURE_DB_PATH="$2"
+            shift 2
+            ;;
+        --output_dir)
+            OUTPUT_DIR="$2"
+            shift 2
+            ;;
+        -h|--help)
+            echo "用法: $0 [选项]"
+            echo "选项:"
+            echo "  --root_dir <路径>            数据集根目录 (默认: $ROOT_DIR)"
+            echo "  --split <train/val/test>     数据集分割 (默认: $SPLIT)"
+            echo "  --num_views <数量>           视点组数量 (默认: $NUM_VIEWS)"
+            echo "  --num_images_per_view <数量> 每个视点组图像数 (默认: $NUM_IMAGES_PER_VIEW)"
+            echo "  --image_size <尺寸>          图像尺寸 (默认: $IMAGE_SIZE)"
+            echo "  --model_path <路径>          模型文件路径 (必填)"
+            echo "  --feat_dim <维度>            特征维度 (默认: $FEAT_DIM)"
+            echo "  --num_classes <数量>         类别数量 (默认: $NUM_CLASSES)"
+            echo "  --feature_db_path <路径>     特征数据库路径 (必填)"
+            echo "  --output_dir <路径>          结果输出目录 (默认: $OUTPUT_DIR)"
+            echo "  -h, --help                   显示帮助信息"
+            exit 0
+            ;;
+        *)
+            echo "未知选项: $1"
+            echo "使用 -h 或 --help 查看帮助"
+            exit 1
+            ;;
+    esac
+done
 
-# 参数解析
-parse_arguments() {
-    DATA_DIR="${DEFAULT_DATA_DIR}"
-    SPLIT="${DEFAULT_SPLIT}"
-    MODEL_PATH="${DEFAULT_MODEL_PATH}"
-    MODEL_NAME="${DEFAULT_MODEL_NAME}"
-    FEATURE_DIM="${DEFAULT_FEATURE_DIM}"
-    BATCH_SIZE="${DEFAULT_BATCH_SIZE}"
-    DEVICE="${DEFAULT_DEVICE}"
-    TOPK_LIST="${DEFAULT_TOPK_LIST}"
-    USE_MULTIPLE_VIEWS=""
-    OUTPUT_DIR="${DEFAULT_OUTPUT_DIR}"
-    DEBUG=""
-    
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            --data-dir)
-                DATA_DIR="$2"
-                shift 2
-                ;;
-            --split)
-                SPLIT="$2"
-                shift 2
-                ;;
-            --model-path)
-                MODEL_PATH="$2"
-                shift 2
-                ;;
-            --model-name)
-                MODEL_NAME="$2"
-                shift 2
-                ;;
-            --feature-dim)
-                FEATURE_DIM="$2"
-                shift 2
-                ;;
-            --batch-size)
-                BATCH_SIZE="$2"
-                shift 2
-                ;;
-            --device)
-                DEVICE="$2"
-                shift 2
-                ;;
-            --topk-list)
-                TOPK_LIST="$2"
-                shift 2
-                ;;
-            --use-multiple-views)
-                USE_MULTIPLE_VIEWS="--use-multiple-views"
-                shift 1
-                ;;
-            --output-dir)
-                OUTPUT_DIR="$2"
-                shift 2
-                ;;
-            --debug)
-                DEBUG="--debug"
-                shift 1
-                ;;
-            -h|--help)
-                show_help
-                exit 0
-                ;;
-            *)
-                echo -e "${RED}未知选项: $1${NC}"
-                show_help
-                exit 1
-                ;;
-        esac
-    done
-}
+# 检查必要参数
+if [[ -z "$MODEL_PATH" ]]; then
+    echo -e "\033[31m错误: 必须指定模型文件路径 --model_path\033[0m"
+    exit 1
+fi
 
-# 检查路径
-check_paths() {
-    # 检查数据集目录
-    if [ ! -d "${DATA_DIR}" ]; then
-        echo -e "${RED}错误: 数据集目录不存在: ${DATA_DIR}${NC}"
-        exit 1
-    fi
-    
-    # 检查模型文件
-    if [ ! -f "${MODEL_PATH}" ]; then
-        echo -e "${RED}错误: 模型文件不存在: ${MODEL_PATH}${NC}"
-        exit 1
-    fi
-    
-    # 创建输出目录
-    mkdir -p "${OUTPUT_DIR}"
-}
+if [[ -z "$FEATURE_DB_PATH" ]]; then
+    echo -e "\033[31m错误: 必须指定特征数据库路径 --feature_db_path\033[0m"
+    exit 1
+fi
 
-# 显示配置信息
-show_config() {
-    echo -e "${GREEN}========================================${NC}"
-    echo -e "${GREEN}           评估配置信息               ${NC}"
-    echo -e "${GREEN}========================================${NC}"
-    echo -e "${BLUE}数据集目录:${NC} ${DATA_DIR}"
-    echo -e "${BLUE}数据集划分:${NC} ${SPLIT}"
-    echo -e "${BLUE}模型路径:${NC} ${MODEL_PATH}"
-    echo -e "${BLUE}模型名称:${NC} ${MODEL_NAME}"
-    echo -e "${BLUE}特征维度:${NC} ${FEATURE_DIM}"
-    echo -e "${BLUE}批量大小:${NC} ${BATCH_SIZE}"
-    echo -e "${BLUE}运行设备:${NC} ${DEVICE}"
-    echo -e "${BLUE}Top-K列表:${NC} ${TOPK_LIST}"
-    echo -e "${BLUE}使用多视图检索:${NC} ${USE_MULTIPLE_VIEWS:+是}${USE_MULTIPLE_VIEWS:-否}"
-    echo -e "${BLUE}输出目录:${NC} ${OUTPUT_DIR}"
-    echo -e "${BLUE}日志文件:${NC} ${LOG_FILE}"
-    echo -e "${BLUE}调试模式:${NC} ${DEBUG:+是}${DEBUG:-否}"
-    echo -e "${GREEN}========================================${NC}"
-}
+# 检查文件是否存在
+if [[ ! -f "$MODEL_PATH" ]]; then
+    echo -e "\033[31m错误: 模型文件不存在: $MODEL_PATH\033[0m"
+    exit 1
+fi
 
-# 主函数
-main() {
-    # 解析命令行参数
-    parse_arguments "$@"
-    
-    # 生成日志文件路径
-    TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-    LOG_FILE="${OUTPUT_DIR}/evaluation_${TIMESTAMP}.log"
-    
-    # 检查路径
-    check_paths
-    
-    # 显示配置信息
-    show_config
-    
-    # 构建评估命令
-    EVALUATE_CMD="python evaluate.py \
-        --data_dir "${DATA_DIR}" \
-        --split "${SPLIT}" \
-        --model_path "${MODEL_PATH}" \
-        --model_name "${MODEL_NAME}" \
-        --feature_dim "${FEATURE_DIM}" \
-        --batch_size "${BATCH_SIZE}" \
-        --device "${DEVICE}" \
-        --topk_list ${TOPK_LIST} \
-        --output_dir "${OUTPUT_DIR}" \
-        --log_file "${LOG_FILE}" \
-        ${USE_MULTIPLE_VIEWS} \
-        ${DEBUG}"
-    
-    echo -e "${BLUE}执行命令:${NC} ${EVALUATE_CMD}"
-    echo -e "${YELLOW}评估开始时间: $(date)${NC}"
-    echo -e "${YELLOW}日志将输出到: ${LOG_FILE}${NC}"
-    
-    # 执行评估
-    eval "${EVALUATE_CMD}"
-    
-    # 检查执行状态
-    if [ $? -eq 0 ]; then
-        echo -e "${GREEN}评估成功完成！${NC}"
-        echo -e "${GREEN}评估结果和日志已保存到: ${OUTPUT_DIR}${NC}"
-    else
-        echo -e "${RED}评估失败，请查看日志文件了解详情。${NC}"
-        exit 1
-    fi
-    
-    echo -e "${YELLOW}评估结束时间: $(date)${NC}"
-}
+if [[ ! -f "$FEATURE_DB_PATH" ]]; then
+    echo -e "\033[31m错误: 特征数据库文件不存在: $FEATURE_DB_PATH\033[0m"
+    exit 1
+fi
 
-# 执行主函数
-main "$@"
+# 打印配置信息
+echo -e "\033[33m[配置信息]\033[0m"
+echo -e "\033[33m数据集路径: $ROOT_DIR\033[0m"
+echo -e "\033[33m数据集分割: $SPLIT\033[0m"
+echo -e "\033[33m视点组数量: $NUM_VIEWS\033[0m"
+echo -e "\033[33m每个视点组图像数: $NUM_IMAGES_PER_VIEW\033[0m"
+echo -e "\033[33m图像尺寸: $IMAGE_SIZE\033[0m"
+echo -e "\033[33m模型路径: $MODEL_PATH\033[0m"
+echo -e "\033[33m特征维度: $FEAT_DIM\033[0m"
+echo -e "\033[33m类别数量: $NUM_CLASSES\033[0m"
+echo -e "\033[33m特征数据库: $FEATURE_DB_PATH\033[0m"
+echo -e "\033[33m输出目录: $OUTPUT_DIR\033[0m"
+echo
+
+# 创建输出目录
+if [[ ! -d "$OUTPUT_DIR" ]]; then
+    mkdir -p "$OUTPUT_DIR"
+    echo -e "\033[32m创建输出目录: $OUTPUT_DIR\033[0m"
+fi
+
+# 构建命令行参数
+CMD_ARGS="--root_dir \"$ROOT_DIR\" \
+           --split $SPLIT \
+           --num_views $NUM_VIEWS \
+           --num_images_per_view $NUM_IMAGES_PER_VIEW \
+           --image_size $IMAGE_SIZE \
+           --model_path \"$MODEL_PATH\" \
+           --feat_dim $FEAT_DIM \
+           --num_classes $NUM_CLASSES \
+           --feature_db_path \"$FEATURE_DB_PATH\" \
+           --output_dir \"$OUTPUT_DIR\""
+
+# 调用验证脚本
+echo -e "\033[32m开始验证...\033[0m"
+echo
+
+# 使用 Python 执行验证代码
+PYTHON_CMD="python evaluate.py $CMD_ARGS"
+echo -e "\033[90m执行命令: $PYTHON_CMD\033[0m"
+echo
+
+# 执行命令
+python evaluate.py \
+    --root_dir "$ROOT_DIR" \
+    --split "$SPLIT" \
+    --num_views "$NUM_VIEWS" \
+    --num_images_per_view "$NUM_IMAGES_PER_VIEW" \
+    --image_size "$IMAGE_SIZE" \
+    --model_path "$MODEL_PATH" \
+    --feat_dim "$FEAT_DIM" \
+    --num_classes "$NUM_CLASSES" \
+    --feature_db_path "$FEATURE_DB_PATH" \
+    --output_dir "$OUTPUT_DIR"
+
+# 检查执行结果
+if [[ $? -eq 0 ]]; then
+    echo
+    echo -e "\033[32m=========================================================\033[0m"
+    echo -e "\033[32m                  验证完成，结果已保存！                  \033[0m"
+    echo -e "\033[32m=========================================================\033[0m"
+    echo 
+    echo -e "\033[32m结果文件路径: $OUTPUT_DIR/evaluation_results.json\033[0m"
+else
+    echo
+    echo -e "\033[31m=========================================================\033[0m"
+    echo -e "\033[31m                   验证失败！                           \033[0m"
+    echo -e "\033[31m=========================================================\033[0m"
+    echo 
+    echo -e "\033[31m错误代码: $?\033[0m"
+    exit 1
+fi

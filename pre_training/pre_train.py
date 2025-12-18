@@ -154,11 +154,7 @@ def save_checkpoint(model, optimizer, epoch, best_acc, checkpoint_dir, is_best=F
         'best_acc': best_acc
     }
     
-    # 保存常规检查点
-    checkpoint_path = os.path.join(checkpoint_dir, f'checkpoint_epoch_{epoch}.pth')
-    torch.save(checkpoint, checkpoint_path)
-    
-    # 如果是最佳模型，保存单独的文件
+    # 只保存最佳模型
     if is_best:
         best_model_path = os.path.join(checkpoint_dir, 'best_model.pth')
         torch.save(checkpoint, best_model_path)
@@ -280,19 +276,21 @@ def main(args):
         if is_best:
             best_acc = val_acc
         
-        # 保存特征提取器的权重（用于迁移）
-        if isinstance(model, nn.DataParallel):
-            feature_extractor = model.module.get_feature_extractor()
-        else:
-            feature_extractor = model.get_feature_extractor()
+        # 只在验证准确率提升时保存特征提取器的权重（用于迁移）
+        if is_best:
+            if isinstance(model, nn.DataParallel):
+                feature_extractor = model.module.get_feature_extractor()
+            else:
+                feature_extractor = model.get_feature_extractor()
+            
+            torch.save(
+                feature_extractor.state_dict(),
+                os.path.join(args.checkpoint_dir, 'best_feature_extractor.pth')
+            )
+            print(f"Best feature extractor saved to {os.path.join(args.checkpoint_dir, 'best_feature_extractor.pth')}")
         
-        torch.save(
-            feature_extractor.state_dict(),
-            os.path.join(args.checkpoint_dir, f'feature_extractor_epoch_{epoch}.pth')
-        )
-        
-        # 保存完整检查点
-        save_checkpoint(model, optimizer, epoch, best_acc, args.checkpoint_dir, is_best)
+        # 保存检查点（只保存最佳模型）
+    save_checkpoint(model, optimizer, epoch, best_acc, args.checkpoint_dir, is_best)
         
     # 训练完成
     print("=" * 60)

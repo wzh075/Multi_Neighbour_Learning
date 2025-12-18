@@ -87,10 +87,15 @@ def load_retrieval_model(args, device):
     """
     print("加载检索模型...")
 
+    # 获取特征激活缩放系数（与training模块保持一致）
+    feat_activation_scaling = getattr(args, 'feat_activation_scaling', 1.0)
+    print(f"特征激活缩放系数: {feat_activation_scaling}")
+
     # 初始化模型
     model = MultiViewRetrievalModel(
         num_classes=1,  # 占位值，检索时不重要
-        feat_dim=args.feat_dim
+        feat_dim=args.feat_dim,
+        feat_activation_scaling=feat_activation_scaling
     )
 
     model_path = args.model_path
@@ -345,6 +350,8 @@ def parse_args():
     # 模型参数
     parser.add_argument('--feat_dim', type=int, default=512,
                         help='特征维度大小')
+    parser.add_argument('--feat_activation_scaling', type=float, default=1.0,
+                        help='特征激活缩放系数（与training模块保持一致）')
     parser.add_argument('--model_path', type=str, default='',
                         help='预训练模型路径')
     parser.add_argument('--save_dir', type=str, default='../checkpoints',

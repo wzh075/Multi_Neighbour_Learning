@@ -27,7 +27,6 @@ try:
     from loss_function.InfoNCE_Loss import InfoNCELoss
     from loss_function.view_similarity_Loss import ViewSimilarityLoss
     from loss_function.global_consistency_Loss import GlobalConsistencyLoss
-    from loss_function.obj_cluster_Loss import ObjectClusterLoss
 except ImportError as e:
     print(f"错误: 无法导入必要模块: {e}")
     sys.exit(1)
@@ -37,7 +36,7 @@ class MultiViewSplitLoss(nn.Module):
     多视图拆分损失函数，整合各个损失组件
     """
     def __init__(self, tau=0.1, lambda_view_sim=0.001, 
-                 lambda_global_consistency=0.3, lambda_obj_cluster=1.0, device=None):
+                 lambda_global_consistency=0.3, device=None):
         super(MultiViewSplitLoss, self).__init__()
         self.device = device if device is not None else torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.tau = tau
@@ -46,7 +45,6 @@ class MultiViewSplitLoss(nn.Module):
         self.infonce_loss_fn = InfoNCELoss(tau=tau)
         self.view_sim_loss_fn = ViewSimilarityLoss()
         self.global_consistency_loss_fn = GlobalConsistencyLoss()
-        self.obj_cluster_loss_fn = ObjectClusterLoss(tau=tau)
         
         # 添加特征正则化层，用于改善特征分布
         self.feat_regularizer = nn.Parameter(torch.tensor(1.0))
@@ -58,12 +56,10 @@ class MultiViewSplitLoss(nn.Module):
         self.infonce_loss_fn = self.infonce_loss_fn.to(self.device)
         self.view_sim_loss_fn = self.view_sim_loss_fn.to(self.device)
         self.global_consistency_loss_fn = self.global_consistency_loss_fn.to(self.device)
-        self.obj_cluster_loss_fn = self.obj_cluster_loss_fn.to(self.device)
         
         # 损失权重
         self.lambda_view_sim = lambda_view_sim
         self.lambda_global_consistency = lambda_global_consistency
-        self.lambda_obj_cluster = lambda_obj_cluster
         # 特征正则化权重
         self.feat_mean_reg_weight = 0.2
         self.feat_var_reg_weight = 0.1
@@ -99,13 +95,7 @@ class MultiViewSplitLoss(nn.Module):
         # 全局一致性损失 - 适当增大权重，确保特征一致性
         global_consistency_loss = self.global_consistency_loss_fn(view_feats, global_feat) * (self.lambda_global_consistency * 2)  # 增大2倍
         
-        # 对象聚类损失 - 使用class_labels作为类别标签，而不是obj_ids
-        # 如果没有提供class_labels，则回退到obj_ids
-        cluster_labels = class_labels if class_labels is not None else obj_ids
-        # 确保对象特征有足够的区分性，添加特征分布正则化
-        obj_cluster_loss = self.obj_cluster_loss_fn(obj_feat, cluster_labels) * self.lambda_obj_cluster
-        # 添加最小损失下限
-        obj_cluster_loss = torch.max(obj_cluster_loss, torch.tensor(0.01).to(self.device))
+        # 对象聚类损失已移除
         
         # 重新实现特征正则化，确保不会导致特征过快收敛
         feat_mean_reg = 0.0
@@ -161,7 +151,6 @@ class MultiViewSplitLoss(nn.Module):
             'infonce_loss': infonce_loss,
             'view_similarity_loss': view_similarity_loss,
             'global_consistency_loss': global_consistency_loss,
-            'obj_cluster_loss': obj_cluster_loss,
             'feat_mean_reg': total_feat_reg  # 简化正则化权重
         }
 
@@ -220,7 +209,10 @@ def train_model_func(args):
         feat_activation_scaling=feat_activation_scaling
     )
     
-    # 加载预训练权重
+    # 尝试自动加载预训练MVCNN参数
+    pretrained_loaded = False
+    
+    # 首先检查是否通过命令行参数提供了预训练权重
     if args.pretrained_weights is not None:
         if os.path.exists(args.pretrained_weights):
             print(f"加载预训练权重: {args.pretrained_weights}")
@@ -231,32 +223,49 @@ def train_model_func(args):
                 # 检查是否是完整的模型权重或只有编码器权重
                 if 'model_state_dict' in checkpoint:
                     state_dict = checkpoint['model_state_dict']
+                    # 这是完整模型，使用标准加载逻辑
+                    is_feature_extractor_only = False
                 else:
                     state_dict = checkpoint
+                    # 检查是否是特征提取器权重（通常会有projection或feature_extractor等键）
+                    is_feature_extractor_only = any(key.startswith('projection') or 'feature_extractor' in key or 'feature_scale' in key for key in state_dict.keys())
                 
                 # 处理可能的键名不匹配
                 model_dict = model.state_dict()
                 
                 # 创建新的state_dict，只保留模型中存在的键
                 new_state_dict = {}
-                for k, v in state_dict.items():
-                    # 移除可能的.module前缀
-                    if k.startswith('module.'):
-                        k = k[7:]
-                    
-                    # 检查键是否存在于模型中且形状匹配
-                    if k in model_dict and model_dict[k].shape == v.shape:
-                        new_state_dict[k] = v
-                    elif 'classifier' in k or 'fc' in k.lower() and 'class' in k.lower():
-                        # 跳过分类器层，因为类别数可能不同
-                        print(f"跳过分类器层: {k}")
-                    else:
-                        print(f"未使用的权重: {k}, 形状不匹配")
+                
+                # 如果是特征提取器权重，需要映射键名
+                if is_feature_extractor_only:
+                    print("检测到特征提取器权重，进行键名映射")
+                    for k, v in state_dict.items():
+                        # 将特征提取器权重映射到view_encoder
+                        model_key = f'view_encoder.{k}'
+                        if model_key in model_dict and model_dict[model_key].shape == v.shape:
+                            new_state_dict[model_key] = v
+                            print(f"映射权重: {k} -> {model_key}")
+                else:
+                    # 标准模型权重加载逻辑
+                    for k, v in state_dict.items():
+                        # 移除可能的.module前缀
+                        if k.startswith('module.'):
+                            k = k[7:]
+                        
+                        # 检查键是否存在于模型中且形状匹配
+                        if k in model_dict and model_dict[k].shape == v.shape:
+                            new_state_dict[k] = v
+                        elif 'classifier' in k or 'fc' in k.lower() and 'class' in k.lower():
+                            # 跳过分类器层，因为类别数可能不同
+                            print(f"跳过分类器层: {k}")
+                        else:
+                            print(f"未使用的权重: {k}, 形状不匹配")
                 
                 # 更新模型权重
                 model_dict.update(new_state_dict)
                 model.load_state_dict(model_dict, strict=False)
                 print(f"成功加载 {len(new_state_dict)} 个预训练权重参数")
+                pretrained_loaded = True
                 
                 # 冻结编码器部分（如果需要）
                 if args.freeze_encoder:
@@ -271,6 +280,49 @@ def train_model_func(args):
                 traceback.print_exc()
         else:
             print(f"警告: 预训练权重文件不存在: {args.pretrained_weights}")
+    
+    # 如果没有通过命令行参数提供，尝试自动查找预训练MVCNN特征提取器权重
+    if not pretrained_loaded:
+        # 默认的预训练特征提取器权重路径 - 优先查找pre_training保存的路径和文件名
+        default_pretrained_path = os.path.join(os.path.dirname(__file__), '..', 'pre_checkpoints', 'best_feature_extractor.pth')
+        if os.path.exists(default_pretrained_path):
+            print(f"自动加载MVCNN特征提取器权重: {default_pretrained_path}")
+            try:
+                # 加载预训练的特征提取器权重
+                feat_extractor_weights = torch.load(default_pretrained_path, map_location='cpu')
+                
+                # 创建模型字典的副本以进行修改
+                model_dict = model.state_dict()
+                
+                # 找出预训练特征提取器中与模型view_encoder匹配的部分
+                # 将预训练权重的键名转换为模型中对应的键名
+                new_state_dict = {}
+                for k, v in feat_extractor_weights.items():
+                    # 特征提取器权重名称映射到view_encoder
+                    if 'feature_extractor' in k or 'projection' in k or 'feature_scale' in k or 'feature_bias' in k or 'activation_scaling' in k:
+                        model_key = f'view_encoder.{k}'
+                        if model_key in model_dict and model_dict[model_key].shape == v.shape:
+                            new_state_dict[model_key] = v
+                
+                # 检查是否成功加载了一些权重
+                if not new_state_dict:
+                    print("警告: 未找到匹配的特征提取器权重")
+                else:
+                    print(f"成功加载 {len(new_state_dict)} 个匹配的特征提取器权重")
+                    # 更新模型字典
+                    model_dict.update(new_state_dict)
+                    # 加载更新后的模型字典
+                    model.load_state_dict(model_dict, strict=False)
+                    print("MVCNN特征提取器权重加载成功")
+                    pretrained_loaded = True
+            except Exception as e:
+                print(f"加载MVCNN特征提取器权重失败: {str(e)}")
+                import traceback
+                traceback.print_exc()
+    
+    # 如果没有找到预训练权重，使用默认初始化
+    if not pretrained_loaded:
+        print("未找到预训练权重，使用默认初始化")
 
     # 禁用调试模式以减少输出
     try:
@@ -300,7 +352,6 @@ def train_model_func(args):
         tau=args.tau,
         lambda_view_sim=args.lambda_view_sim,
         lambda_global_consistency=args.lambda_global_consistency,
-        lambda_obj_cluster=args.lambda_obj_cluster,
         device=device
     )
     
@@ -358,8 +409,6 @@ def parse_args():
                         help='视图特征间相似度损失权重')
     parser.add_argument('--lambda_global_consistency', type=float, default=1.0,
                         help='global_feat一致性损失权重')
-    parser.add_argument('--lambda_obj_cluster', type=float, default=1.0,
-                        help='obj_feat聚类损失权重')
     parser.add_argument('--feat_activation_scaling', type=float, default=1.0,
                         help='特征激活缩放系数')
     parser.add_argument('--feat_reg_weight', type=float, default=1.0,

@@ -4,7 +4,7 @@
 
 # 设置环境变量
 export PYTHONUNBUFFERED=1
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=2
 
 # 项目根目录
 PROJECT_ROOT=$(dirname "$(dirname "$(realpath "$0")")")

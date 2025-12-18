@@ -1,279 +1,567 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
 import os
 import sys
-import json
+import argparse
 import torch
 import numpy as np
-import argparse
-from datetime import datetime
-from retrieval_sys import RetrievalSystem
+import h5py
 from torchvision import transforms
-import logging
+from tqdm import tqdm
+from torch import nn
 
 # 添加项目根目录到Python路径
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# 导入正确路径的模块
-try:
-    from tools.Multi_Neighbour_View_Dataloader import MultiViewDataset
-    from models.MultiView_Retrieval_Model import MultiViewRetrievalModel
-    
-    # 定义load_retrieval_model函数用于加载模型
-    def load_retrieval_model(model_path, model_name, feature_dim, device):
-        """加载检索模型"""
-        # 根据ModelNet40数据集设置类别数量为40
-        num_classes = 40
+# 导入模型和数据加载器
+from models.MultiView_Retrieval_Model import MultiViewRetrievalModel
+from tools.Multi_Neighbour_View_Dataloader import MultiViewDataset
+
+class FeatureDatabase:
+    """
+    特征数据库，用于存储和检索特征
+    """
+    def __init__(self, db_path):
+        """
+        :param db_path: 数据库文件路径
+        """
+        self.db_path = db_path
+        self.db = None
+        self.object_features = {}
+        self.view_features = {}
+        self.class_map = {}
         
-        # 创建模型配置，确保与MultiViewRetrievalModel构造函数匹配
-        model_config = {
-            'num_classes': num_classes,
-            'feat_dim': feature_dim
-        }
+    def open(self):
+        """打开数据库并加载特征"""
+        if self.db is None:
+            self.db = h5py.File(self.db_path, 'r')
         
-        # 初始化模型
-        model = MultiViewRetrievalModel(**model_config)
-        
-        # 加载预训练权重
-        if os.path.exists(model_path):
-            checkpoint = torch.load(model_path, map_location=device)
-            # 处理不同格式的checkpoint
-            state_dict = checkpoint['model_state_dict'] if 'model_state_dict' in checkpoint else checkpoint
+        # 加载所有对象特征和视图特征
+        for obj_id in tqdm(self.db.keys(), desc="加载特征数据库"):
+            # 提取类别信息（假设obj_id格式为"class_obj"）
+            class_name = obj_id.split('_')[0]
+            self.class_map[obj_id] = class_name
             
-            # 使用strict=False参数忽略不匹配的键，解决模型架构变化问题
-            try:
-                model.load_state_dict(state_dict, strict=False)
-                print("模型权重已加载，忽略不匹配的键")
-            except Exception as e:
-                print(f"加载模型权重时出现错误: {str(e)}")
-                # 尝试手动映射权重键
-                new_state_dict = {}
-                for key, value in state_dict.items():
-                    # 尝试直接匹配或简单映射
-                    if key in model.state_dict():
-                        new_state_dict[key] = value
-                    # 对于可能的基础层名称变化，可以添加映射逻辑
-                    # 这里不做复杂映射，仅使用存在的键
-                if new_state_dict:
-                    model.load_state_dict(new_state_dict, strict=False)
-                    print(f"部分权重已加载: {len(new_state_dict)}/{len(state_dict)} 个键")
+            # 加载对象特征
+            if 'obj_feat' in self.db[obj_id]:
+                self.object_features[obj_id] = torch.from_numpy(self.db[obj_id]['obj_feat'][()])
+            
+            # 加载视图特征
+            if 'view_features' in self.db[obj_id]:
+                view_feats = torch.from_numpy(self.db[obj_id]['view_features'][()])
+                for i, view_feat in enumerate(view_feats):
+                    view_key = f"{obj_id}_view_{i}"
+                    self.view_features[view_key] = view_feat
+                    self.class_map[view_key] = class_name
         
-        # 将模型移动到指定设备
-        model.to(device)
-        model.eval()  # 设置为评估模式
-        
-        return model
-except ImportError as e:
-        raise ImportError(f"无法导入必要的模块: {str(e)}")
+        print(f"特征数据库加载完成: {len(self.object_features)}个对象特征, {len(self.view_features)}个视图特征")
+    
+    def close(self):
+        """关闭数据库"""
+        if self.db is not None:
+            self.db.close()
+            self.db = None
+    
+    def get_object_features(self):
+        """获取所有对象特征"""
+        return self.object_features
+    
+    def get_view_features(self):
+        """获取所有视图特征"""
+        return self.view_features
+    
+    def get_class_map(self):
+        """获取对象/视图到类别的映射"""
+        return self.class_map
 
-def setup_logger(log_file):
-    """设置日志记录器
-    
-    Args:
-        log_file: 日志文件路径
-    
-    Returns:
-        配置好的日志记录器
+def load_model(args, device):
     """
-    logger = logging.getLogger('evaluation')
-    logger.setLevel(logging.INFO)
-    
-    # 确保日志目录存在
-    log_dir = os.path.dirname(log_file)
-    if log_dir and not os.path.exists(log_dir):
-        os.makedirs(log_dir)
-    
-    # 创建文件处理器
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.INFO)
-    
-    # 创建控制台处理器
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    
-    # 设置日志格式
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(formatter)
-    console_handler.setFormatter(formatter)
-    
-    # 添加处理器到日志记录器
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
-    
-    return logger
-
-def evaluate_retrieval_system(model, dataset, args, logger):
-    """评估检索系统性能
+    加载用于评估的模型
     
     Args:
-        model: 特征提取模型
-        dataset: 评估数据集
         args: 命令行参数
-        logger: 日志记录器
+        device: 计算设备
     
     Returns:
-        评估结果字典
+        model: 加载好的模型
     """
-    # 创建TensorBoard目录
-    tensorboard_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'tensorboard_log', 'retrieval')
-    os.makedirs(tensorboard_dir, exist_ok=True)
-    
-    # 初始化检索系统
-    retrieval_system = RetrievalSystem(model=model, tensorboard_dir=tensorboard_dir)
-    logger.info(f"TensorBoard日志将保存至: {tensorboard_dir}")
-    
-    # 构建特征数据库
-    logger.info(f"开始构建特征数据库，数据集大小: {len(dataset)}")
-    retrieval_system.build_database(dataset, batch_size=args.batch_size, device=args.device)
-    
-    # 评估对象检索性能
-    logger.info("开始评估对象检索性能")
-    obj_retrieval_results = retrieval_system.evaluate_object_retrieval(
-        dataset, 
-        topk_list=args.topk_list,
-        use_multiple_views=args.use_multiple_views,
-        debug=args.debug
-    )
-    
-    # 记录对象检索结果
-    logger.info("对象检索性能评估结果:")
-    for mode in ['single_view', 'multiple_views', 'overall']:
-        if mode in obj_retrieval_results:
-            logger.info(f"\n{mode.upper()} 结果:")
-            for topk in args.topk_list:
-                if topk in obj_retrieval_results[mode]:
-                    result = obj_retrieval_results[mode][topk]
-                    logger.info(f"  Top-{topk}:")
-                    logger.info(f"    对象召回率: {result['obj_recall']:.4f}")
-                    logger.info(f"    类别召回率: {result['class_recall']:.4f}")
-                    if 'total_queries' in result:
-                        logger.info(f"    查询总数: {result['total_queries']}")
-    
-    # 评估视图检索性能
-    logger.info("\n开始评估视图检索性能")
-    view_retrieval_results = retrieval_system.evaluate_view_retrieval(
-        dataset, 
-        topk_list=args.topk_list
-    )
-    
-    # 记录视图检索结果
-    logger.info("视图检索性能评估结果:")
-    for topk in args.topk_list:
-        if topk in view_retrieval_results:
-            result = view_retrieval_results[topk]
-            logger.info(f"  Top-{topk}:")
-            logger.info(f"    视图召回率: {result['view_recall']:.4f}")
-            logger.info(f"    查询总数: {result['total_queries']}")
-    
-    # 整合所有结果
-    all_results = {
-        'object_retrieval': obj_retrieval_results,
-        'view_retrieval': view_retrieval_results,
-        'args': vars(args)
-    }
-    
-    # 保存评估结果
-    if args.output_dir:
-        results_file = os.path.join(args.output_dir, 'evaluation_results.json')
-        os.makedirs(args.output_dir, exist_ok=True)
-        with open(results_file, 'w', encoding='utf-8') as f:
-            json.dump(all_results, f, indent=2, ensure_ascii=False, default=str)
-        logger.info(f"评估结果已保存到: {results_file}")
-    
-    return all_results
+    print("加载评估模型...")
 
-def parse_args():
-    """解析命令行参数
-    
-    Returns:
-        解析后的参数对象
-    """
-    parser = argparse.ArgumentParser(description='多视图检索系统评估')
-    
-    # 数据参数
-    parser.add_argument('--data_dir', type=str, required=True, help='数据集目录')
-    parser.add_argument('--split', type=str, default='test', choices=['train', 'val', 'test'], help='数据集划分')
-    parser.add_argument('--num_views', type=int, default=3, help='每个对象的视图数量')
-    parser.add_argument('--num_images_per_view', type=int, default=5, help='每个视图的图像数量')
-    
-    # 模型参数
-    parser.add_argument('--model_path', type=str, required=True, help='预训练模型路径')
-    parser.add_argument('--model_name', type=str, default='resnet50', choices=['resnet18', 'resnet34', 'resnet50', 'resnet101'], help='模型名称')
-    parser.add_argument('--feature_dim', type=int, default=1024, help='特征维度')
-    
-    # 评估参数
-    parser.add_argument('--batch_size', type=int, default=32, help='批量大小')
-    parser.add_argument('--device', type=str, default='cuda', choices=['cuda', 'cpu'], help='运行设备')
-    parser.add_argument('--topk_list', type=int, nargs='+', default=[1, 5, 10], help='评估的top-k值列表')
-    parser.add_argument('--use_multiple_views', action='store_true', help='是否使用多视图检索')
-    
-    # 输出参数
-    parser.add_argument('--output_dir', type=str, default='./evaluation_results', help='评估结果输出目录')
-    parser.add_argument('--log_file', type=str, default=None, help='日志文件路径（默认在output_dir中生成）')
-    
-    # 其他参数
-    parser.add_argument('--debug', action='store_true', help='是否打印调试信息')
-    
-    args = parser.parse_args()
-    
-    # 参数验证
-    if not os.path.exists(args.data_dir):
-        raise FileNotFoundError(f"数据集目录不存在: {args.data_dir}")
-    
-    if not os.path.exists(args.model_path):
+    # 初始化模型
+    model = MultiViewRetrievalModel(
+        num_classes=args.num_classes,
+        feat_dim=args.feat_dim
+    )
+
+    # 加载预训练权重
+    if os.path.exists(args.model_path):
+        checkpoint = torch.load(args.model_path, map_location=device)
+        state_dict = checkpoint['model_state_dict']
+        
+        # 检查是否是DataParallel保存的权重
+        if any(k.startswith('module.') for k in state_dict.keys()):
+            state_dict = {k.replace('module.', ''): v for k, v in state_dict.items()}
+        
+        # 严格加载权重，不允许参数不匹配
+        model.load_state_dict(state_dict, strict=True)
+        print(f"已成功加载模型权重: {args.model_path}")
+    else:
         raise FileNotFoundError(f"模型文件不存在: {args.model_path}")
     
-    # 如果未指定日志文件路径，则在输出目录中生成
-    if args.log_file is None:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        log_dir = args.output_dir if args.output_dir else '.'
-        args.log_file = os.path.join(log_dir, f'evaluation_{timestamp}.log')
+    # 将模型移动到设备并设置为评估模式
+    model = model.to(device)
+    model.eval()
     
-    return args
+    return model
+
+def preprocess_images(images, transform, device):
+    """
+    预处理图像
+    
+    Args:
+        images: 原始图像（可能已经是torch.Tensor类型）
+        transform: 图像变换
+        device: 计算设备
+    
+    Returns:
+        processed_images: 预处理后的图像
+    """
+    # 检查images是否已经是tensor
+    if isinstance(images, torch.Tensor):
+        # 如果已经是tensor，直接返回并移动到设备
+        return images.to(device)
+    else:
+        # 否则应用变换并移动到设备
+        processed_images = []
+        for img in images:
+            processed_images.append(transform(img))
+        
+        return torch.stack(processed_images).to(device)
+
+def single_viewgroup_retrieval(model, viewgroup_images, num_views, device, transform):
+    """
+    单视点组输入检索object
+    
+    Args:
+        model: 评估模型
+        viewgroup_images: 单视点组图像
+        num_views: 训练时设置的视点组输入数量
+        device: 计算设备
+        transform: 图像变换
+    
+    Returns:
+        object_feat: 对象特征
+    """
+    # 将单视点组通过复制扩展为训练设置的视点组输入数量
+    expanded_viewgroups = [viewgroup_images] * num_views
+    
+    # 预处理所有视点组
+    processed_viewgroups = []
+    for viewgroup in expanded_viewgroups:
+        processed_images = preprocess_images(viewgroup, transform, device)
+        # 添加batch维度
+        processed_images = processed_images.unsqueeze(0)  # [1, num_images_per_view, C, H, W]
+        processed_viewgroups.append(processed_images)
+    
+    # 执行前向传播
+    with torch.no_grad():
+        # 根据训练时的输入格式，需要将每个视点组作为单独的参数传入
+        outputs = model(*processed_viewgroups)
+    
+    return outputs['obj_feat']
+
+def multi_viewgroup_retrieval(model, viewgroup_images_list, device, transform):
+    """
+    多视点组输入检索object
+    
+    Args:
+        model: 评估模型
+        viewgroup_images_list: 多视点组图像列表
+        device: 计算设备
+        transform: 图像变换
+    
+    Returns:
+        object_feat: 对象特征
+    """
+    # 预处理所有视点组
+    processed_viewgroups = []
+    for viewgroup in viewgroup_images_list:
+        processed_images = preprocess_images(viewgroup, transform, device)
+        # 添加batch维度
+        processed_images = processed_images.unsqueeze(0)  # [1, num_images_per_view, C, H, W]
+        processed_viewgroups.append(processed_images)
+    
+    # 执行前向传播
+    with torch.no_grad():
+        outputs = model(*processed_viewgroups)
+    
+    return outputs['obj_feat']
+
+def viewgroup_cross_retrieval(model, viewgroup_images, device, transform):
+    """
+    视点组之间互检索
+    
+    Args:
+        model: 评估模型
+        viewgroup_images: 视点组图像
+        device: 计算设备
+        transform: 图像变换
+    
+    Returns:
+        view_feat: 视图特征
+    """
+    # 预处理图像
+    processed_images = preprocess_images(viewgroup_images, transform, device)
+    # 添加batch维度
+    processed_images = processed_images.unsqueeze(0)  # [1, num_images_per_view, C, H, W]
+    
+    # 只使用view_encoder进行编码
+    with torch.no_grad():
+        view_feats = model.view_encoder(processed_images)
+        
+        # 平均池化得到该视点组的特征表示
+        # 先在num_images_per_view维度上平均，然后在batch维度上平均
+        view_feat = torch.mean(view_feats, dim=1)  # [1, feat_dim]
+        view_feat = view_feat.squeeze(0)  # [feat_dim]
+    
+    return view_feat
+
+def compute_recall(queries, database, class_map, top_k_list=[1, 5, 10]):
+    """
+    计算召回率
+    
+    Args:
+        queries: 查询特征字典 {query_id: query_feat}
+        database: 数据库特征字典 {db_id: db_feat}
+        class_map: 类别映射字典 {id: class_name}
+        top_k_list: 召回率的K值列表
+    
+    Returns:
+        recall_results: 召回率结果字典
+    """
+    # 将数据库特征转换为张量
+    db_ids = list(database.keys())
+    db_feats = torch.stack([database[db_id] for db_id in db_ids])
+    
+    # 获取查询特征的设备（假设所有查询特征在同一设备上）
+    if queries:
+        device = next(iter(queries.values())).device
+        db_feats = db_feats.to(device)
+    
+    # 计算所有查询的召回率
+    recall_counts = {k: 0 for k in top_k_list}
+    class_recall_counts = {k: 0 for k in top_k_list}
+    total_queries = len(queries)
+    
+    for query_id, query_feat in tqdm(queries.items(), desc="计算召回率"):
+        # 计算余弦相似度
+        similarities = torch.nn.functional.cosine_similarity(
+            query_feat.unsqueeze(0), db_feats, dim=1
+        )
+        
+        # 获取相似度排序的索引
+        _, indices = torch.sort(similarities, descending=True)
+        # 去除batch维度，得到一维索引张量
+        indices = indices.squeeze(0)
+        
+        # 获取查询的真实对象ID和类别
+        query_obj_id = query_id.split('_view_')[0] if '_view_' in query_id else query_id
+        query_class = class_map[query_id]
+        
+        # 检查每个top_k的召回情况
+        for k in top_k_list:
+            # 获取top-k的数据库ID
+            top_k_indices = indices[:k]
+            # 将索引张量转换为Python整数列表
+            top_k_indices = top_k_indices.tolist()
+            top_k_db_ids = [db_ids[idx] for idx in top_k_indices]
+            
+            # 检查是否召回了相同对象
+            for db_id in top_k_db_ids:
+                db_obj_id = db_id.split('_view_')[0] if '_view_' in db_id else db_id
+                if db_obj_id == query_obj_id:
+                    recall_counts[k] += 1
+                    break
+            
+            # 检查是否召回了相同类别
+            for db_id in top_k_db_ids:
+                db_class = class_map[db_id]
+                if db_class == query_class:
+                    class_recall_counts[k] += 1
+                    break
+    
+    # 计算召回率
+    recall_results = {
+        'object_recall': {k: recall_counts[k] / total_queries for k in top_k_list},
+        'class_recall': {k: class_recall_counts[k] / total_queries for k in top_k_list}
+    }
+    
+    return recall_results
+
+def evaluate_single_viewgroup_retrieval(model, feature_db, dataset, num_views, device, transform):
+    """
+    评估单视点组输入检索object
+    
+    Args:
+        model: 评估模型
+        feature_db: 特征数据库
+        dataset: 验证数据集
+        num_views: 训练时设置的视点组数量
+        device: 计算设备
+        transform: 图像变换
+    
+    Returns:
+        recall_results: 召回率结果
+    """
+    print("\n=== 单视点组输入检索object ===")
+    
+    # 构建查询集（只使用第一个视点组）
+    queries = {}
+    for i in tqdm(range(len(dataset)), desc="生成查询"):
+        data = dataset[i]
+        obj_id = data['obj_id']
+        images = data['images']  # [num_views, num_images_per_view, C, H, W]
+        
+        # 只使用第一个视点组
+        viewgroup_images = images[0]
+        
+        # 生成对象特征
+        obj_feat = single_viewgroup_retrieval(model, viewgroup_images, num_views, device, transform)
+        queries[obj_id] = obj_feat
+    
+    # 获取数据库
+    database = feature_db.get_object_features()
+    class_map = feature_db.get_class_map()
+    
+    # 计算召回率
+    recall_results = compute_recall(queries, database, class_map)
+    
+    # 打印结果
+    print("单视点组检索结果:")
+    for k in sorted(recall_results['object_recall'].keys()):
+        print(f"  Top-{k} Object Recall: {recall_results['object_recall'][k]:.4f}")
+        print(f"  Top-{k} Class Recall: {recall_results['class_recall'][k]:.4f}")
+    
+    return recall_results
+
+def evaluate_multi_viewgroup_retrieval(model, feature_db, dataset, device, transform):
+    """
+    评估多视点组输入检索object
+    
+    Args:
+        model: 评估模型
+        feature_db: 特征数据库
+        dataset: 验证数据集
+        device: 计算设备
+        transform: 图像变换
+    
+    Returns:
+        recall_results: 召回率结果
+    """
+    print("\n=== 多视点组输入检索object ===")
+    
+    # 构建查询集
+    queries = {}
+    for i in tqdm(range(len(dataset)), desc="生成查询"):
+        data = dataset[i]
+        obj_id = data['obj_id']
+        images = data['images']  # [num_views, num_images_per_view, C, H, W]
+        
+        # 使用所有视点组
+        viewgroup_images_list = [images[j] for j in range(images.shape[0])]
+        
+        # 生成对象特征
+        obj_feat = multi_viewgroup_retrieval(model, viewgroup_images_list, device, transform)
+        queries[obj_id] = obj_feat
+    
+    # 获取数据库
+    database = feature_db.get_object_features()
+    class_map = feature_db.get_class_map()
+    
+    # 计算召回率
+    recall_results = compute_recall(queries, database, class_map)
+    
+    # 打印结果
+    print("多视点组检索结果:")
+    for k in sorted(recall_results['object_recall'].keys()):
+        print(f"  Top-{k} Object Recall: {recall_results['object_recall'][k]:.4f}")
+        print(f"  Top-{k} Class Recall: {recall_results['class_recall'][k]:.4f}")
+    
+    return recall_results
+
+def evaluate_viewgroup_cross_retrieval(model, feature_db, dataset, device, transform):
+    """
+    评估视点组之间互检索
+    
+    Args:
+        model: 评估模型
+        feature_db: 特征数据库
+        dataset: 验证数据集
+        device: 计算设备
+        transform: 图像变换
+    
+    Returns:
+        recall_results: 召回率结果
+    """
+    print("\n=== 视点组之间互检索 ===")
+    
+    # 构建查询集
+    queries = {}
+    for i in tqdm(range(len(dataset)), desc="生成查询"):
+        data = dataset[i]
+        obj_id = data['obj_id']
+        images = data['images']  # [num_views, num_images_per_view, C, H, W]
+        
+        # 使用所有视点组
+        for j in range(images.shape[0]):
+            view_key = f"{obj_id}_view_{j}"
+            viewgroup_images = images[j]
+            
+            # 生成视图特征
+            view_feat = viewgroup_cross_retrieval(model, viewgroup_images, device, transform)
+            queries[view_key] = view_feat
+    
+    # 获取数据库
+    database = feature_db.get_view_features()
+    class_map = feature_db.get_class_map()
+    
+    # 计算召回率
+    recall_results = compute_recall(queries, database, class_map)
+    
+    # 打印结果
+    print("视点组互检索结果:")
+    for k in sorted(recall_results['object_recall'].keys()):
+        print(f"  Top-{k} View Recall: {recall_results['object_recall'][k]:.4f}")
+        print(f"  Top-{k} Class Recall: {recall_results['class_recall'][k]:.4f}")
+    
+    return recall_results
 
 def main():
     """主函数"""
     # 解析命令行参数
-    args = parse_args()
+    parser = argparse.ArgumentParser(description='多视图检索系统 - 验证模块')
     
-    # 设置日志记录
-    logger = setup_logger(args.log_file)
-    logger.info(f"开始评估多视图检索系统")
-    logger.info(f"命令行参数: {vars(args)}")
+    # 数据参数
+    parser.add_argument('--root_dir', type=str, default='/data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0',
+                        help='数据集根目录')
+    parser.add_argument('--split', type=str, default='val',
+                        help='数据集分割 (train/val/test)')
+    parser.add_argument('--num_views', type=int, default=3,
+                        help='训练时设置的视点组数量')
+    parser.add_argument('--num_images_per_view', type=int, default=5,
+                        help='每个视点组的图像数量')
+    parser.add_argument('--image_size', type=int, default=224,
+                        help='输入图像尺寸')
     
-    try:
-        # 检查CUDA可用性
-        if args.device == 'cuda' and not torch.cuda.is_available():
-            logger.warning("CUDA不可用，使用CPU")
-            args.device = 'cpu'
+    # 模型参数
+    parser.add_argument('--model_path', type=str, required=True,
+                        help='训练得到的模型pth文件路径')
+    parser.add_argument('--feat_dim', type=int, default=512,
+                        help='特征维度大小')
+    parser.add_argument('--num_classes', type=int, default=40,
+                        help='类别数量')
+    
+    # 特征数据库参数
+    parser.add_argument('--feature_db_path', type=str, required=True,
+                        help='特征数据库路径')
+    
+    # 输出参数
+    parser.add_argument('--output_dir', type=str, default='./results',
+                        help='结果输出目录')
+    
+    args = parser.parse_args()
+    
+    # 设置设备
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"使用设备: {device}")
+    
+    # 创建输出目录
+    os.makedirs(args.output_dir, exist_ok=True)
+    
+    # 加载模型
+    model = load_model(args, device)
+    
+    # 打开特征数据库
+    feature_db = FeatureDatabase(args.feature_db_path)
+    feature_db.open()
+    
+    # 数据预处理
+    transform = transforms.Compose([
+        transforms.Resize((args.image_size, args.image_size)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+    ])
+    
+    # 创建验证数据集
+    dataset = MultiViewDataset(
+        root_dir=args.root_dir,
+        transform=transform,
+        num_views=args.num_views,
+        num_images_per_view=args.num_images_per_view,
+        split=args.split
+    )
+    
+    print(f"验证数据集加载完成: {len(dataset)}个样本")
+    
+    # 执行验证
+    all_results = {}
+    
+    # 1. 单视点组输入检索object
+    single_view_results = evaluate_single_viewgroup_retrieval(
+        model, feature_db, dataset, args.num_views, device, transform
+    )
+    all_results['single_view_retrieval'] = single_view_results
+    
+    # 2. 多视点组输入检索object
+    multi_view_results = evaluate_multi_viewgroup_retrieval(
+        model, feature_db, dataset, device, transform
+    )
+    all_results['multi_view_retrieval'] = multi_view_results
+    
+    # 3. 视点组之间互检索
+    view_cross_results = evaluate_viewgroup_cross_retrieval(
+        model, feature_db, dataset, device, transform
+    )
+    all_results['view_cross_retrieval'] = view_cross_results
+    
+    # 保存结果
+    import json
+    results_path = os.path.join(args.output_dir, 'evaluation_results.json')
+    with open(results_path, 'w') as f:
+        # 将所有张量转换为可序列化的类型
+        def serialize_results(results):
+            if isinstance(results, dict):
+                return {k: serialize_results(v) for k, v in results.items()}
+            elif isinstance(results, float):
+                return results
+            elif hasattr(results, 'item'):
+                return results.item()
+            else:
+                return results
         
-        # 加载模型
-        logger.info(f"加载模型: {args.model_path}")
-        model = load_retrieval_model(args.model_path, args.model_name, args.feature_dim, args.device)
-        
-        # 数据预处理 - 与训练脚本保持一致的transform
-        transform = transforms.Compose([
-            transforms.Resize((224, 224)),  # 使用与训练相同的图像大小
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
-        
-        # 加载数据集
-        logger.info(f"加载数据集: {args.data_dir} (split: {args.split})")
-        dataset = MultiViewDataset(
-            root_dir=args.data_dir,
-            transform=transform,
-            num_views=args.num_views,
-            num_images_per_view=args.num_images_per_view,
-            split=args.split
-        )
-        
-        # 执行评估
-        results = evaluate_retrieval_system(model, dataset, args, logger)
-        
-        logger.info("评估完成！")
-        
-    except Exception as e:
-        logger.error(f"评估过程中出现错误: {str(e)}", exc_info=True)
-        raise
+        json.dump(serialize_results(all_results), f, indent=2, ensure_ascii=False)
+    
+    print(f"\n验证结果已保存至: {results_path}")
+    
+    # 关闭特征数据库
+    feature_db.close()
+    
+    print("\n=== 验证完成 ===")
+    
+    # 打印总体结果
+    print("\n总体验证结果:")
+    print("单视点组检索:")
+    for k in sorted(all_results['single_view_retrieval']['object_recall'].keys()):
+        print(f"  Top-{k} Object Recall: {all_results['single_view_retrieval']['object_recall'][k]:.4f}")
+    
+    print("多视点组检索:")
+    for k in sorted(all_results['multi_view_retrieval']['object_recall'].keys()):
+        print(f"  Top-{k} Object Recall: {all_results['multi_view_retrieval']['object_recall'][k]:.4f}")
+    
+    print("视点组互检索:")
+    for k in sorted(all_results['view_cross_retrieval']['object_recall'].keys()):
+        print(f"  Top-{k} View Recall: {all_results['view_cross_retrieval']['object_recall'][k]:.4f}")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
