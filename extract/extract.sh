@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 
 # 默认参数
 ROOT_DIR="/data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0"
-SPLIT="train"
+SPLIT="test"
 FEATURE_DB="../features/feature_db.h5"
 MODEL_PATH="../checkpoints/best_model.pth"
 BATCH_SIZE=16

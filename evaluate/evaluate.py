@@ -445,7 +445,7 @@ def main():
     # 数据参数
     parser.add_argument('--root_dir', type=str, default='/data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0',
                         help='数据集根目录')
-    parser.add_argument('--split', type=str, default='val',
+    parser.add_argument('--split', type=str, default='train',
                         help='数据集分割 (train/val/test)')
     parser.add_argument('--num_views', type=int, default=3,
                         help='训练时设置的视点组数量')

@@ -119,6 +119,12 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
                 view2 = images[:, 1]
                 view3 = images[:, 2]
                 
+                # 将字符串obj_ids转换为数值型索引
+                # 创建唯一的数值索引映射
+                unique_obj_ids = list(set(obj_ids))
+                obj_id_to_idx = {obj_id: idx for idx, obj_id in enumerate(unique_obj_ids)}
+                obj_indices = torch.tensor([obj_id_to_idx[obj_id] for obj_id in obj_ids], device=device)
+                
                 # 梯度累积：只在累积开始时清零梯度
                 if (batch_idx + 1) % accumulation_steps == 1:
                     optimizer.zero_grad()
@@ -129,20 +135,23 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
                         # 前向传播
                         outputs = model(view1, view2, view3)
                         
-                        # 计算损失
-                        obj_feat = outputs.get('obj_feat', outputs['global_feat'])
+                        # 计算损失，使用原始特征而不是归一化后的特征计算损失
+                        obj_feat = outputs.get('obj_feat', outputs['raw_global_feat'])
                         loss_dict = criterion(
                             outputs['view_feats'], 
-                            outputs['mid_feat'], 
-                            outputs['global_feat'],
-                            batch['obj_ids'],
+                            outputs['raw_mid_feat'], 
+                            outputs['raw_global_feat'],
+                            obj_indices,  # 使用数值型索引而不是字符串
                             obj_feat=obj_feat,
-                            class_labels=labels
+                            class_labels=labels,
+                            raw_mid_feat=outputs.get('raw_mid_feat', None),
+                            raw_global_feat=outputs.get('raw_global_feat', None),
+                            raw_obj_feat=outputs.get('raw_obj_feat', None)
                         )
                         
                         # 重新平衡损失权重，确保各损失项都有适当贡献
                         # 使用更合理的组合
-                        loss = (loss_dict['infonce_loss'] * 1.2 + 
+                        loss = (loss_dict['infonce_loss'] * 2.0 + 
                                 loss_dict['view_similarity_loss'] + 
                                 loss_dict['global_consistency_loss'] + 
                                 loss_dict.get('feat_mean_reg', 0.0)) / accumulation_steps
@@ -165,12 +174,12 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
                 else:
                     # 常规训练
                     outputs = model(view1, view2, view3)
-                    obj_feat = outputs.get('obj_feat', outputs['global_feat'])
+                    obj_feat = outputs.get('obj_feat', outputs['raw_global_feat'])
                     loss_dict = criterion(
                         outputs['view_feats'], 
-                        outputs['mid_feat'], 
-                        outputs['global_feat'],
-                        batch['obj_ids'],
+                        outputs['raw_mid_feat'], 
+                        outputs['raw_global_feat'],
+                        obj_indices,  # 使用数值型索引而不是字符串
                         obj_feat=obj_feat,
                         class_labels=labels,
                         raw_mid_feat=outputs.get('raw_mid_feat', None),
@@ -180,7 +189,7 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
                     
                     # 重新平衡损失权重，确保各损失项都有适当贡献
                     # 使用更合理的组合
-                    loss = (loss_dict['infonce_loss'] * 1.2 + 
+                    loss = (loss_dict['infonce_loss'] * 2.0 + 
                             loss_dict['view_similarity_loss'] + 
                             loss_dict['global_consistency_loss'] + 
                             loss_dict.get('feat_mean_reg', 0.0)) / accumulation_steps
@@ -210,6 +219,9 @@ def train_model(model, dataset, criterion, epochs=100, batch_size=32, lr=1e-3, s
                     writer.add_scalar('Features/mid_feat_std', outputs['mid_feat'].std().item(), global_step)
                     writer.add_scalar('Features/global_feat_mean', outputs['global_feat'].mean().item(), global_step)
                     writer.add_scalar('Features/global_feat_std', outputs['global_feat'].std().item(), global_step)
+                    # 添加原始全局特征的统计
+                    writer.add_scalar('Features/raw_global_feat_mean', outputs['raw_global_feat'].mean().item(), global_step)
+                    writer.add_scalar('Features/raw_global_feat_std', outputs['raw_global_feat'].std().item(), global_step)
                 
                 # 检查InfoNCE损失是否接近0
                 if loss_dict['infonce_loss'].item() < 1e-6:

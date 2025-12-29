@@ -16,7 +16,7 @@ class InfoNCELoss(nn.Module):
     Args:
         tau: 温度参数，用于控制softmax的分布陡峭程度
     """
-    def __init__(self, tau=0.5):  # 增大温度参数，使分布更平滑，避免损失过早趋近于0
+    def __init__(self, tau=0.1):  # 显著降低温度参数，适应未归一化特征
         super().__init__()
         self.tau = tau
         # 可学习的温度参数，便于动态调整
@@ -42,12 +42,13 @@ class InfoNCELoss(nn.Module):
             zero_loss.requires_grad_(True)
             return zero_loss
             
-        # 特征归一化，确保特征在单位球面上
-        view_feats_norm = F.normalize(view_feats, p=2, dim=-1)
+        # 移除特征归一化，直接使用原始特征
+        # view_feats_norm = F.normalize(view_feats, p=2, dim=-1)  # 已移除
+        view_feats_norm = view_feats  # 直接使用原始特征
         all_losses = []
         
-        # 使用可学习的温度参数，确保温度为正数，扩大范围以允许更平滑的分布
-        effective_tau = torch.clamp(self.learnable_tau, min=0.1, max=2.0)
+        # 使用可学习的温度参数，显著降低温度以适应未归一化特征
+        effective_tau = torch.clamp(self.learnable_tau, min=0.01, max=0.5)
         
         # 计算批次内所有视图的特征
         all_views_flat = view_feats_norm.reshape(-1, feat_dim)
@@ -56,6 +57,7 @@ class InfoNCELoss(nn.Module):
         for obj_idx in range(batch_size):
             obj_view_feats = view_feats_norm[obj_idx]
             # 计算同一对象不同视图之间的相似度矩阵
+            # 使用更小的温度参数，避免相似度过大
             obj_sim_matrix = torch.matmul(obj_view_feats, obj_view_feats.T) / effective_tau
             
             # 对每个视图计算InfoNCE损失
@@ -92,7 +94,6 @@ class InfoNCELoss(nn.Module):
             obj_sim_matrix.diagonal().zero_()
             
             # 计算批次内对象间的对比损失，鼓励不同对象之间的特征差异
-            # 使用较小的温度参数增强区分度
             batch_diversity_loss = -torch.log(torch.exp(-obj_sim_matrix).mean() + 1e-16)
             
             # 将批次内差异损失添加到总损失中
@@ -100,16 +101,16 @@ class InfoNCELoss(nn.Module):
         
         # 增强的特征分布正则化，直接防止特征坍塌到零点
         # 1. 特征均值正则化：鼓励特征均值远离零
-        target_mean = torch.ones(feat_dim, device=view_feats.device) * 0.1  # 目标均值设为0.1
-        mean_reg = 0.2 * F.mse_loss(view_feats_norm.mean(dim=0).mean(dim=0), target_mean)
+        target_mean = torch.ones(feat_dim, device=view_feats.device) * 0.5  # 提高目标均值
+        mean_reg = 0.1 * F.mse_loss(view_feats_norm.mean(dim=0).mean(dim=0), target_mean)
         
         # 2. 增强的特征方差正则化：确保特征具有足够的差异性
         # 计算每个特征维度的方差
         feat_var = view_feats_norm.var(dim=0).mean(dim=0)
-        # 目标方差设为更合理的值，避免特征过度分散
-        target_var = torch.ones(feat_dim, device=view_feats.device) * 0.05  # 降低目标方差
-        # 使用Huber损失更鲁棒地优化方差，降低权重
-        var_reg = 0.1 * F.huber_loss(feat_var, target_var, delta=0.1)
+        # 目标方差设为更合理的值，适应未归一化特征
+        target_var = torch.ones(feat_dim, device=view_feats.device) * 0.2  # 提高目标方差
+        # 使用Huber损失更鲁棒地优化方差
+        var_reg = 0.05 * F.huber_loss(feat_var, target_var, delta=0.1)
         
         # 3. 批次内特征离散度增强：确保同一批次内不同对象的特征有足够差异
         if batch_size > 1:
@@ -121,18 +122,18 @@ class InfoNCELoss(nn.Module):
             # 计算最大相似度
             max_cross_sim = obj_sim_matrix.max()
             # 降低相似度正则化权重，避免过度惩罚相似特征
-            similarity_reg = 0.2 * F.relu(max_cross_sim - 0.7)  # 提高阈值至0.7，允许更多相似性
+            similarity_reg = 0.1 * F.relu(max_cross_sim - 0.8)  # 提高阈值
         else:
             similarity_reg = torch.tensor(0.0, device=view_feats.device, requires_grad=True)
         
-        # 4. 特征稀疏性正则化：防止特征过度集中，降低权重
+        # 4. 特征稀疏性正则化：防止特征过度集中
         sparsity_reg = 0.01 * torch.mean(torch.abs(view_feats_norm))
         
         # 将正则化项添加到总损失中，按顺序添加并确保总损失不会过小
         avg_loss = avg_loss + mean_reg + var_reg + similarity_reg + sparsity_reg
         
         # 确保损失有一个最小下限，防止损失为0
-        min_loss = torch.tensor(0.01, device=view_feats.device, dtype=avg_loss.dtype)
+        min_loss = torch.tensor(0.1, device=view_feats.device, dtype=avg_loss.dtype)  # 提高最小损失
         avg_loss = torch.max(avg_loss, min_loss)
         
         # 移除调试打印以避免内存泄漏

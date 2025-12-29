@@ -83,17 +83,17 @@ class MultiViewSplitLoss(nn.Module):
         - 包含各损失项的字典
         """
         # 使用视图特征的原始值进行InfoNCE计算，保持特征多样性
-        # InfoNCE损失函数内部会进行归一化，这里不需要额外归一化
+        # InfoNCE损失函数内部已移除归一化，直接使用原始特征
         # 增加InfoNCE损失的权重，确保它在总损失中占有重要比重
-        infonce_loss = self.infonce_loss_fn(view_feats, obj_ids) * 1.5
+        infonce_loss = self.infonce_loss_fn(view_feats, obj_ids) * 2.0  # 提高权重
         # 添加最小损失下限，防止过快收敛到0
-        infonce_loss = torch.max(infonce_loss, torch.tensor(0.01).to(self.device))
+        infonce_loss = torch.max(infonce_loss, torch.tensor(0.1).to(self.device))  # 提高最小损失
         
         # 视图相似度损失 - 减小权重，避免过度正则化
-        view_similarity_loss = self.view_sim_loss_fn(view_feats) * (self.lambda_view_sim / 10)  # 减小10倍
+        view_similarity_loss = self.view_sim_loss_fn(view_feats) * (self.lambda_view_sim * 0.5)  # 调整为合理的权重
         
         # 全局一致性损失 - 适当增大权重，确保特征一致性
-        global_consistency_loss = self.global_consistency_loss_fn(view_feats, global_feat) * (self.lambda_global_consistency * 2)  # 增大2倍
+        global_consistency_loss = self.global_consistency_loss_fn(view_feats, global_feat) * (self.lambda_global_consistency * 1.5)  # 适度增大权重
         
         # 对象聚类损失已移除
         

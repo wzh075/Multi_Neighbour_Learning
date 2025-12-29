@@ -32,12 +32,12 @@ class GlobalConsistencyLoss(nn.Module):
         # 计算所有视图的共同成分（通过均值获得）
         view_common_feat = view_feats.mean(dim=1)  # (batch, feat_dim)
         
-        # 特征归一化
-        view_common_norm = F.normalize(view_common_feat, p=2, dim=-1)
-        global_norm = F.normalize(global_feat, p=2, dim=-1)
+        # 移除特征归一化，直接使用原始特征
+        # view_common_norm = F.normalize(view_common_feat, p=2, dim=-1)  # 已移除
+        # global_norm = F.normalize(global_feat, p=2, dim=-1)  # 已移除
         
-        # 计算归一化后的共同特征和全局特征之间的余弦相似度
-        cos_sim = F.cosine_similarity(view_common_norm, global_norm, dim=-1)
+        # 计算原始共同特征和全局特征之间的余弦相似度
+        cos_sim = F.cosine_similarity(view_common_feat, global_feat, dim=-1)
         
         # 返回1-平均余弦相似度作为损失（余弦相似度越高，损失越小）
         return (1 - cos_sim).mean()  # 损失范围[0,2]

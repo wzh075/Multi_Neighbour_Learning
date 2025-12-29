@@ -148,3 +148,98 @@ python test_visualization.py
 - **可视化过于拥挤**：减小`max_objects_per_class`参数值
 - **内存不足**：处理大规模数据集时，减小`max_objects_per_class`或分批次处理
 - **脚本执行权限错误**：运行 `chmod +x visualize.sh` 确保脚本有执行权限
+
+# 特征可视化说明
+
+本目录包含多个特征可视化脚本，用于可视化特征数据库中的不同特征类型。
+
+## 脚本说明
+
+### 1. feature_visualization.py
+- **功能**: 通用特征可视化脚本，支持多种降维方法
+- **特点**: 
+  - 支持t-SNE、PCA、UMAP等多种降维方法
+  - 支持2D和3D可视化
+  - 按类别自动着色
+  - 可控制每个类别显示的对象数量
+
+### 2. object_feature_visualization.py
+- **功能**: 可视化object级别的特征，将每个对象作为一个点进行可视化
+- **特点**: 
+  - 支持不同特征类型 (obj_feat, global_features, view_features)
+  - 不同颜色表示不同类别
+  - 生成3D、2D PCA和2D t-SNE图
+  - 支持中文标签显示
+
+### 3. view_feature_visualization.py
+- **功能**: 可视化view级别的特征，将每个view作为一个点进行可视化
+- **特点**:
+  - 专门用于多视角特征分析
+  - 不同颜色表示不同对象
+  - 生成3D、2D PCA和2D t-SNE图
+  - 支持中文标签显示
+  - 可限制每个对象的最大view数量以控制数据量
+
+## 运行脚本
+
+### 使用Python直接运行
+
+```bash
+# 通用特征可视化
+python feature_visualization.py --feature_db ../features/feature_db.h5 --output_dir ../visualizations
+
+# Object级别特征可视化
+python object_feature_visualization.py --feature_db_path ../features/feature_db.h5 --feat_type obj_feat --output_dir ../visualizations --max_samples 500
+
+# View级别特征可视化
+python view_feature_visualization.py --feature_db_path ../features/feature_db.h5 --output_dir ../visualizations --max_samples 500 --max_views_per_obj 5
+```
+
+### 使用PowerShell脚本
+
+```powershell
+# Object级别特征可视化
+.\visualize_obj_features.ps1 --feature_db_path "../features/feature_db.h5" --feat_type "obj_feat" --output_dir "../visualizations" --max_samples 500
+
+# View级别特征可视化
+.\visualize_view_features.ps1 --feature_db_path "../features/feature_db.h5" --output_dir "../visualizations" --max_samples 500 --max_views_per_obj 5
+```
+
+### 使用Bash脚本
+
+```bash
+# Object级别特征可视化
+./visualize_obj_features.sh --feature_db_path "../features/feature_db.h5" --feat_type "obj_feat" --output_dir "../visualizations" --max_samples 500
+
+# View级别特征可视化
+./visualize_view_features.sh --feature_db_path "../features/feature_db.h5" --output_dir "../visualizations" --max_samples 500 --max_views_per_obj 5
+```
+
+## 参数说明
+
+- `--feature_db` 或 `--feature_db_path`: 特征数据库路径 (.h5文件)
+- `--feat_type`: 特征类型 (仅object_feature_visualization.py使用)
+  - `obj_feat`: 对象特征
+  - `global_features`: 全局特征
+  - `view_features`: 视角特征
+- `--output_dir`: 输出目录路径
+- `--max_samples`: 最大采样数量（如果指定，将从特征中随机采样）
+- `--max_views_per_obj`: 每个对象的最大view数量（仅view_feature_visualization.py使用）
+
+## 输出文件
+
+脚本会生成以下可视化文件：
+
+- `{type}_3d_scatter.png`: 3D散点图
+- `{type}_pca_2d.png`: 2D PCA降维图
+- `{type}_tsne_2d.png`: 2D t-SNE降维图
+
+其中 `{type}` 为特征类型名称。
+
+## 特性
+
+- **中文支持**: 自动检测并使用中文字体，支持中文标签显示
+- **类别着色**: 不同类别/对象使用不同颜色显示
+- **多种降维方法**: 支持PCA和t-SNE降维
+- **统计分析**: 提供特征分布的统计信息
+- **灵活配置**: 支持多种参数配置以适应不同需求

@@ -33,8 +33,9 @@ class ViewSimilarityLoss(nn.Module):
             zero_loss.requires_grad_(True)
             return zero_loss
         
-        # 特征归一化
-        view_feats_norm = F.normalize(view_feats, p=2, dim=-1)
+        # 移除特征归一化，直接使用原始特征
+        # view_feats_norm = F.normalize(view_feats, p=2, dim=-1)  # 已移除
+        view_feats_norm = view_feats  # 直接使用原始特征
         all_similarities = []
         
         # 计算同一对象不同视图之间的余弦相似度

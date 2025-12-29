@@ -6,7 +6,7 @@
 
 # 设置默认参数
 ROOT_DIR="/data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0"
-SPLIT="train"
+SPLIT="test"
 NUM_VIEWS=3
 NUM_IMAGES_PER_VIEW=5
 IMAGE_SIZE=224

@@ -5,7 +5,7 @@
 echo "===== 多视图检索系统训练启动 ====="
 
 # 设置环境变量
-export CUDA_VISIBLE_DEVICES=0,1  # 使用指定的GPU设备
+export CUDA_VISIBLE_DEVICES=0,1,2,3  # 使用指定的GPU设备
 
 # 进入脚本所在目录
 cd "$(dirname "$0")"
@@ -15,8 +15,8 @@ cd "$(dirname "$0")"
 
 # 设置训练参数
 ROOT_DIR="/data1/Wuzhihe/Dataset/ModelNet40_Neighbour_view4_1.0"  # 数据集路径
-BATCH_SIZE=16
-EPOCHS=100
+BATCH_SIZE=64
+EPOCHS=50
 LEARNING_RATE=0.0001
 SAVE_DIR="../checkpoints"
 FEAT_DIM=512
